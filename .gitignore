@@ -1,0 +1,59 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/backend/server
+/backend/cloud-storage-server
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+*.prof
+
+# Go workspace file
+go.work
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment & secrets
+.env
+.env.local
+.env.production
+*.pem
+*.key
+
+# Config overrides with secrets
+backend/internal/config/config.prod.yaml
+
+# Build output
+/dist/
+/build/
+
+# Logs
+*.log
+logs/
+
+# Upload temp files
+uploads/
+tmp/
+
+# Data volumes (local dev)
+mysql_data/
+redis_data/
+minio_data/
