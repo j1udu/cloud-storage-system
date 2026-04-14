@@ -39,6 +39,7 @@ Thumbs.db
 *.key
 
 # Config overrides with secrets
+backend/internal/config/config.yaml
 backend/internal/config/config.prod.yaml
 
 # Build output

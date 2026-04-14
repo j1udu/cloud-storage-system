@@ -1,0 +1,36 @@
+server:
+  port: 8080
+  read_timeout_sec: 30
+  write_timeout_sec: 60
+
+mysql:
+  host: "127.0.0.1"
+  port: 3306
+  user: "cloudapp"
+  password: "your_mysql_password"
+  database: "cloud_storage"
+  max_open_conns: 100
+  max_idle_conns: 20
+
+redis:
+  addr: "127.0.0.1:6379"
+  password: ""
+  db: 0
+  pool_size: 50
+
+minio:
+  endpoint: "127.0.0.1:9000"
+  access_key: "your_minio_access_key"
+  secret_key: "your_minio_secret_key"
+  bucket: "cloud-storage"
+  use_ssl: false
+
+jwt:
+  secret: "your_jwt_secret"
+  expire_hour: 24
+  issuer: "cloud-storage-system"
+
+upload:
+  chunk_size_bytes: 5242880
+  max_file_size_bytes: 53687091200
+  session_expire_hour: 24
