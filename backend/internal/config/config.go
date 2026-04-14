@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/spf13/viper"
 )
@@ -76,6 +77,20 @@ func Load(configPath string) (*Config, error) {
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("解析配置文件失败: %w", err)
+	}
+
+	// 环境变量覆盖敏感配置
+	if val := os.Getenv("CLOUD_MYSQL_PASSWORD"); val != "" {
+		cfg.MySQL.Password = val
+	}
+	if val := os.Getenv("CLOUD_MINIO_ACCESS_KEY"); val != "" {
+		cfg.MinIO.AccessKey = val
+	}
+	if val := os.Getenv("CLOUD_MINIO_SECRET_KEY"); val != "" {
+		cfg.MinIO.SecretKey = val
+	}
+	if val := os.Getenv("CLOUD_JWT_SECRET"); val != "" {
+		cfg.JWT.Secret = val
 	}
 
 	return &cfg, nil
