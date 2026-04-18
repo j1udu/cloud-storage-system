@@ -8,6 +8,10 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/j1udu/cloud-storage-system/backend/internal/config"
 	"github.com/j1udu/cloud-storage-system/backend/internal/database"
+	"github.com/j1udu/cloud-storage-system/backend/internal/handler"
+	"github.com/j1udu/cloud-storage-system/backend/internal/repository"
+	"github.com/j1udu/cloud-storage-system/backend/internal/router"
+	"github.com/j1udu/cloud-storage-system/backend/internal/service"
 )
 
 func main() {
@@ -33,8 +37,14 @@ func main() {
 	defer rdb.Close()
 	fmt.Println("Redis 连接成功")
 
-	// 4. 创建 Gin 路由
+	// 4. 依赖注入：创建 Repo → Service → Handler
+	userRepo := repository.NewUserRepo(db)
+	userService := service.NewUserService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHour)
+	userHandler := handler.NewUserHandler(userService)
+
+	// 5. 创建 Gin 引擎，注册路由
 	r := gin.Default()
+	router.Setup(r, userHandler, cfg.JWT.Secret)
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -46,7 +56,7 @@ func main() {
 		})
 	})
 
-	// 5. 启动服务器
+	// 6. 启动服务器
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	fmt.Printf("服务器启动在 %s\n", addr)
 	if err := r.Run(addr); err != nil {
