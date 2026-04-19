@@ -8,6 +8,9 @@ import (
 
 // Setup 注册所有路由
 func Setup(r *gin.Engine, userHandler *handler.UserHandler, jwtSecret string) {
+	// 全局中间件
+	r.Use(middleware.CORSMiddleware())
+
 	// API v1 路由组
 	v1 := r.Group("/api/v1")
 
