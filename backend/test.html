@@ -6,11 +6,12 @@
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, sans-serif; background: #f5f5f5; padding: 20px; }
-        .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; max-width: 500px; }
+        .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; max-width: 600px; }
         h1 { font-size: 20px; margin-bottom: 16px; }
         h2 { font-size: 16px; margin-bottom: 12px; color: #333; }
         label { display: block; margin-bottom: 4px; font-size: 14px; color: #555; }
-        input { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 12px; font-size: 14px; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; margin-bottom: 12px; font-size: 14px; }
+        input[type="file"] { margin-bottom: 12px; font-size: 14px; }
         button { padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 8px; }
         .btn-primary { background: #4a90d9; color: #fff; }
         .btn-primary:hover { background: #3a7bc8; }
@@ -18,14 +19,20 @@
         .btn-danger:hover { background: #c0392b; }
         .btn-success { background: #27ae60; color: #fff; }
         .btn-success:hover { background: #219a52; }
-        pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 4px; font-size: 13px; overflow-x: auto; margin-top: 8px; }
+        .btn-warning { background: #f39c12; color: #fff; }
+        .btn-warning:hover { background: #d68910; }
+        pre { background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 4px; font-size: 13px; overflow-x: auto; margin-top: 8px; max-height: 300px; overflow-y: auto; }
         .token-info { font-size: 13px; color: #888; margin-top: 4px; word-break: break-all; }
+        .file-item { padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+        .file-item:last-child { border-bottom: none; }
+        .file-list { border: 1px solid #ddd; border-radius: 4px; margin-top: 8px; max-height: 300px; overflow-y: auto; }
     </style>
 </head>
 <body>
 
 <h1>云盘后端接口测试</h1>
 
+<!-- 认证模块 -->
 <div class="card">
     <h2>1. 注册</h2>
     <label>用户名（3-64字符）</label>
@@ -61,8 +68,39 @@
     <pre id="test-token-result"></pre>
 </div>
 
+<!-- 文件管理模块 -->
 <div class="card">
-    <h2>4. Ping</h2>
+    <h2>5. 上传文件</h2>
+    <input type="file" id="upload-file">
+    <label>目标文件夹ID（0=根目录）</label>
+    <input type="number" id="upload-parent-id" value="0">
+    <button class="btn-success" onclick="doUpload()">上传</button>
+    <pre id="upload-result"></pre>
+</div>
+
+<div class="card">
+    <h2>6. 文件列表</h2>
+    <label>文件夹ID（0=根目录）</label>
+    <input type="number" id="list-folder-id" value="0">
+    <button class="btn-primary" onclick="doList()">查询</button>
+    <div id="file-list-container"></div>
+    <pre id="list-result"></pre>
+</div>
+
+<div class="card">
+    <h2>7. 下载 / 删除 / 重命名</h2>
+    <label>文件ID</label>
+    <input type="number" id="file-id" value="1">
+    <button class="btn-primary" onclick="doDownload()">下载</button>
+    <button class="btn-danger" onclick="doDelete()">删除</button>
+    <label>新名称</label>
+    <input type="text" id="new-name" placeholder="输入新文件名">
+    <button class="btn-warning" onclick="doRename()">重命名</button>
+    <pre id="file-op-result"></pre>
+</div>
+
+<div class="card">
+    <h2>8. Ping</h2>
     <button class="btn-primary" onclick="doPing()">Ping</button>
     <pre id="ping-result"></pre>
 </div>
@@ -72,25 +110,25 @@ const BASE = 'http://localhost:8080/api/v1'
 let token = ''
 
 async function api(method, path, body) {
-    const headers = { 'Content-Type': 'application/json' }
+    const headers = {}
     if (token) headers['Authorization'] = 'Bearer ' + token
-    const res = await fetch(BASE + path, { method, headers, body: body ? JSON.stringify(body) : undefined })
+    const res = await fetch(BASE + path, { method, headers, body })
     return res.json()
 }
 
 async function doRegister() {
-    const data = await api('POST', '/auth/register', {
+    const data = await api('POST', '/auth/register', JSON.stringify({
         username: document.getElementById('reg-username').value,
         password: document.getElementById('reg-password').value
-    })
+    }))
     document.getElementById('reg-result').textContent = JSON.stringify(data, null, 2)
 }
 
 async function doLogin() {
-    const data = await api('POST', '/auth/login', {
+    const data = await api('POST', '/auth/login', JSON.stringify({
         username: document.getElementById('login-username').value,
         password: document.getElementById('login-password').value
-    })
+    }))
     if (data.code === 0) {
         token = data.data.token
         document.getElementById('token-info').textContent = 'Token: ' + token
@@ -118,10 +156,86 @@ async function doTestToken() {
     }
 }
 
+async function doUpload() {
+    if (!token) { alert('请先登录'); return }
+    const fileInput = document.getElementById('upload-file')
+    if (!fileInput.files[0]) { alert('请选择文件'); return }
+
+    const formData = new FormData()
+    formData.append('file', fileInput.files[0])
+    formData.append('parent_id', document.getElementById('upload-parent-id').value)
+
+    const res = await fetch(BASE + '/files/upload', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token },
+        body: formData
+    })
+    const data = await res.json()
+    document.getElementById('upload-result').textContent = JSON.stringify(data, null, 2)
+    if (data.code === 0) doList()
+}
+
+async function doList() {
+    if (!token) { alert('请先登录'); return }
+    const folderId = document.getElementById('list-folder-id').value
+    const data = await api('GET', '/files?folder_id=' + folderId + '&page=1&page_size=50')
+    document.getElementById('list-result').textContent = JSON.stringify(data, null, 2)
+
+    const container = document.getElementById('file-list-container')
+    if (data.code === 0 && data.data.items.length > 0) {
+        let html = '<div class="file-list">'
+        data.data.items.forEach(f => {
+            const icon = f.dir ? '📁' : '📄'
+            const size = f.dir ? '' : ' (' + formatSize(f.size) + ')'
+            html += '<div class="file-item"><span>' + icon + ' ' + f.name + size + '</span><span style="color:#999;font-size:12px">ID:' + f.id + '</span></div>'
+        })
+        html += '</div>'
+        container.innerHTML = html
+    } else {
+        container.innerHTML = '<div style="color:#999;padding:8px;font-size:14px">暂无文件</div>'
+    }
+}
+
+async function doDownload() {
+    if (!token) { alert('请先登录'); return }
+    const fileId = document.getElementById('file-id').value
+    const data = await api('GET', '/files/' + fileId + '/download')
+    if (data.code === 0) {
+        window.open(data.data.url, '_blank')
+    } else {
+        document.getElementById('file-op-result').textContent = JSON.stringify(data, null, 2)
+    }
+}
+
+async function doDelete() {
+    if (!token) { alert('请先登录'); return }
+    const fileId = document.getElementById('file-id').value
+    const data = await api('DELETE', '/files/' + fileId)
+    document.getElementById('file-op-result').textContent = JSON.stringify(data, null, 2)
+    if (data.code === 0) doList()
+}
+
+async function doRename() {
+    if (!token) { alert('请先登录'); return }
+    const fileId = document.getElementById('file-id').value
+    const newName = document.getElementById('new-name').value.trim()
+    if (!newName) { alert('请输入新名称'); return }
+    const data = await api('PUT', '/files/' + fileId + '/rename', JSON.stringify({ name: newName }))
+    document.getElementById('file-op-result').textContent = JSON.stringify(data, null, 2)
+    if (data.code === 0) doList()
+}
+
 async function doPing() {
     const res = await fetch('http://localhost:8080/ping')
     const data = await res.json()
     document.getElementById('ping-result').textContent = JSON.stringify(data, null, 2)
+}
+
+function formatSize(bytes) {
+    if (bytes < 1024) return bytes + 'B'
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + 'KB'
+    if (bytes < 1073741824) return (bytes / 1048576).toFixed(1) + 'MB'
+    return (bytes / 1073741824).toFixed(1) + 'GB'
 }
 </script>
 

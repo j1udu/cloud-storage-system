@@ -7,7 +7,7 @@ import (
 )
 
 // Setup 注册所有路由
-func Setup(r *gin.Engine, userHandler *handler.UserHandler, jwtSecret string) {
+func Setup(r *gin.Engine, userHandler *handler.UserHandler, fileHandler *handler.FileHandler, jwtSecret string) {
 	// 全局中间件
 	r.Use(middleware.CORSMiddleware())
 
@@ -22,9 +22,16 @@ func Setup(r *gin.Engine, userHandler *handler.UserHandler, jwtSecret string) {
 	}
 
 	// 需要登录的路由
-	authRequired := v1.Group("/auth")
+	authRequired := v1.Group("")
 	authRequired.Use(middleware.AuthMiddleware(jwtSecret))
 	{
-		authRequired.GET("/profile", userHandler.GetProfile)
+		authRequired.GET("/auth/profile", userHandler.GetProfile)
+
+		// 文件管理
+		authRequired.POST("/files/upload", fileHandler.Upload)
+		authRequired.GET("/files", fileHandler.List)
+		authRequired.GET("/files/:id/download", fileHandler.Download)
+		authRequired.DELETE("/files/:id", fileHandler.Delete)
+		authRequired.PUT("/files/:id/rename", fileHandler.Rename)
 	}
 }
