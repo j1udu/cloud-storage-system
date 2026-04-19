@@ -59,7 +59,13 @@ func (s *UserService) Register(req *model.RegisterRequest) (*model.User, error) 
 		return nil, err
 	}
 
-	return user, nil
+	// 5. 查回完整用户信息（含数据库自动生成的字段）
+	created, err := s.repo.GetByID(user.ID)
+	if err != nil {
+		return user, nil
+	}
+
+	return created, nil
 }
 
 // Login 登录

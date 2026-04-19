@@ -16,22 +16,27 @@ func NewUserRepo(db *sql.DB) *UserRepo {
 	return &UserRepo{db: db}
 }
 
-// Create 插入新用户
+// Create 插入新用户，回填自增ID
 func (r *UserRepo) Create(user *model.User) error {
-	_, err := r.db.Exec(
+	result, err := r.db.Exec(
 		"INSERT INTO users (username, password, nickname) VALUES (?, ?, ?)",
 		user.Username, user.Password, user.Nickname,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	id, _ := result.LastInsertId()
+	user.ID = uint64(id)
+	return nil
 }
 
 // GetByUsername 按用户名查询（登录时用，包含密码字段）
 func (r *UserRepo) GetByUsername(username string) (*model.User, error) {
 	var user model.User
 	err := r.db.QueryRow(
-		"SELECT id, username, password, nickname, status, created_at FROM users WHERE username = ?",
+		"SELECT id, username, password, nickname, status, created_at, updated_at FROM users WHERE username = ?",
 		username,
-	).Scan(&user.ID, &user.Username, &user.Password, &user.Nickname, &user.Status, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Password, &user.Nickname, &user.Status, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -42,9 +47,9 @@ func (r *UserRepo) GetByUsername(username string) (*model.User, error) {
 func (r *UserRepo) GetByID(id uint64) (*model.User, error) {
 	var user model.User
 	err := r.db.QueryRow(
-		"SELECT id, username, nickname, status, created_at FROM users WHERE id = ?",
+		"SELECT id, username, nickname, status, created_at, updated_at FROM users WHERE id = ?",
 		id,
-	).Scan(&user.ID, &user.Username, &user.Nickname, &user.Status, &user.CreatedAt)
+	).Scan(&user.ID, &user.Username, &user.Nickname, &user.Status, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
