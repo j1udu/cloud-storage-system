@@ -14,6 +14,8 @@ servers:
 tags:
   - name: 认证
     description: 用户注册、登录、信息管理
+  - name: 文件管理
+    description: 文件上传、下载、列表、删除、重命名
 
 paths:
   /auth/register:
@@ -147,6 +149,289 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /files/upload:
+    post:
+      tags:
+        - 文件管理
+      summary: 上传文件
+      description: 上传文件到指定文件夹，multipart/form-data 格式
+      operationId: uploadFile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: 要上传的文件
+                parent_id:
+                  type: integer
+                  format: uint64
+                  default: 0
+                  description: 目标文件夹ID，0表示根目录
+      responses:
+        '200':
+          description: 上传成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/FileUploadResponse'
+              example:
+                code: 0
+                msg: "success"
+                data:
+                  id: 1
+                  name: "报告.pdf"
+                  size: 1048576
+                  ext: ".pdf"
+        '400':
+          description: 参数错误
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /files:
+    get:
+      tags:
+        - 文件管理
+      summary: 文件列表
+      description: 查询指定文件夹下的文件和子文件夹，分页返回
+      operationId: listFiles
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: folder_id
+          in: query
+          schema:
+            type: integer
+            format: uint64
+            default: 0
+          description: 文件夹ID，0表示根目录
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: 页码
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+          description: 每页数量
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/FileListResponse'
+              example:
+                code: 0
+                msg: "success"
+                data:
+                  total: 2
+                  items:
+                    - id: 1
+                      user_id: 1
+                      parent_id: 0
+                      name: "文档"
+                      dir: true
+                      size: 0
+                      ext: ""
+                      mime_type: ""
+                      status: 1
+                      created_at: "2026-04-20T10:00:00Z"
+                      updated_at: "2026-04-20T10:00:00Z"
+                    - id: 2
+                      user_id: 1
+                      parent_id: 0
+                      name: "报告.pdf"
+                      dir: false
+                      size: 1048576
+                      ext: ".pdf"
+                      mime_type: "application/pdf"
+                      status: 1
+                      created_at: "2026-04-20T10:01:00Z"
+                      updated_at: "2026-04-20T10:01:00Z"
+        '401':
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /files/{id}/download:
+    get:
+      tags:
+        - 文件管理
+      summary: 获取下载链接
+      description: 返回 MinIO 预签名下载 URL，1小时有效
+      operationId: downloadFile
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: uint64
+          description: 文件ID
+      responses:
+        '200':
+          description: 成功返回下载链接
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          url:
+                            type: string
+                            description: 预签名下载URL
+              example:
+                code: 0
+                msg: "success"
+                data:
+                  url: "http://localhost:9000/cloud-storage/1/abc123.pdf?X-Amz-Algorithm=..."
+        '400':
+          description: 文件不存在或无权访问
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /files/{id}:
+    delete:
+      tags:
+        - 文件管理
+      summary: 删除文件
+      description: 软删除，将文件移入回收站（status=2），不删除 MinIO 中的实际文件
+      operationId: deleteFile
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: uint64
+          description: 文件ID
+      responses:
+        '200':
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+              example:
+                code: 0
+                msg: "success"
+                data: null
+        '400':
+          description: 文件不存在或无权操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /files/{id}/rename:
+    put:
+      tags:
+        - 文件管理
+      summary: 重命名文件
+      description: 修改文件名
+      operationId: renameFile
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: uint64
+          description: 文件ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                  description: 新文件名
+                  example: "新名称.pdf"
+      responses:
+        '200':
+          description: 重命名成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+              example:
+                code: 0
+                msg: "success"
+                data: null
+        '400':
+          description: 文件不存在或无权操作
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   securitySchemes:
     BearerAuth:
@@ -257,6 +542,95 @@ components:
           format: date-time
           description: 更新时间
           example: "2026-04-18T16:52:39Z"
+
+    FileUploadResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: uint64
+          description: 文件记录ID
+          example: 1
+        name:
+          type: string
+          description: 文件名
+          example: "报告.pdf"
+        size:
+          type: integer
+          format: int64
+          description: 文件大小（字节）
+          example: 1048576
+        ext:
+          type: string
+          description: 扩展名
+          example: ".pdf"
+
+    FileListResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+          description: 总数量
+          example: 2
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Matter'
+
+    Matter:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: uint64
+          description: 文件/文件夹ID
+          example: 1
+        user_id:
+          type: integer
+          format: uint64
+          description: 所属用户ID
+          example: 1
+        parent_id:
+          type: integer
+          format: uint64
+          description: 父文件夹ID，0=根目录
+          example: 0
+        name:
+          type: string
+          description: 文件名或文件夹名
+          example: "报告.pdf"
+        dir:
+          type: boolean
+          description: "true=文件夹，false=文件"
+          example: false
+        size:
+          type: integer
+          format: int64
+          description: 文件大小（字节），文件夹为0
+          example: 1048576
+        ext:
+          type: string
+          description: 扩展名
+          example: ".pdf"
+        mime_type:
+          type: string
+          description: MIME类型
+          example: "application/pdf"
+        status:
+          type: integer
+          description: "1=正常 2=回收站 3=已删除"
+          example: 1
+        created_at:
+          type: string
+          format: date-time
+          description: 创建时间
+          example: "2026-04-20T10:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          description: 更新时间
+          example: "2026-04-20T10:00:00Z"
 
     ErrorResponse:
       allOf:

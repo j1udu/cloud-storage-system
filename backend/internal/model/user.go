@@ -22,8 +22,8 @@ type RegisterRequest struct {
 
 // LoginRequest 登录时前端传的参数
 type LoginRequest struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
+	Username string `json:"username" binding:"required,min=3,max=64"`
+	Password string `json:"password" binding:"required,min=6,max=128"`
 }
 
 // LoginResponse 登录成功后返回的数据

@@ -31,7 +31,11 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	user, err := h.userService.Register(&req)
 	if err != nil {
-		Fail(c, errcode.ErrUserExists, err.Error())
+		if err.Error() == errcode.GetMsg(errcode.ErrUserExists) {
+			Fail(c, errcode.ErrUserExists, err.Error())
+		} else {
+			Fail(c, errcode.ErrDBError, "注册失败")
+		}
 		return
 	}
 
@@ -49,7 +53,12 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	resp, err := h.userService.Login(&req)
 	if err != nil {
-		Fail(c, errcode.ErrPasswordWrong, err.Error())
+		msg := err.Error()
+		if msg == errcode.GetMsg(errcode.ErrUserNotFound) || msg == errcode.GetMsg(errcode.ErrPasswordWrong) {
+			Fail(c, errcode.ErrPasswordWrong, msg)
+		} else {
+			Fail(c, errcode.ErrDBError, "登录失败")
+		}
 		return
 	}
 
