@@ -30,6 +30,23 @@ type FileUploadResponse struct {
 
 // FileListResponse 文件列表响应
 type FileListResponse struct {
-	Total   int64     `json:"total"`
-	Items   []Matter  `json:"items"`
+	Total  int64    `json:"total"`
+	Items  []Matter `json:"items"`
+}
+
+// FolderCreateRequest 创建文件夹请求
+type FolderCreateRequest struct {
+	ParentID uint64 `json:"parent_id"`
+	Name     string `json:"name" binding:"required,min=1,max=255"`
+}
+
+// PathItem 面包屑路径中的一项
+type PathItem struct {
+	ID   uint64 `json:"id"`
+	Name string `json:"name"`
+}
+
+// MoveRequest 移动文件/文件夹请求
+type MoveRequest struct {
+	TargetID uint64 `json:"target_id" binding:"required"` // 目标文件夹ID，0=根目录
 }

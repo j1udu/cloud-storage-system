@@ -10,12 +10,11 @@ import (
 	"github.com/j1udu/cloud-storage-system/backend/internal/service"
 )
 
-// UserHandler 用户接口，持有 UserService
+// UserHandler 用户接口
 type UserHandler struct {
 	userService *service.UserService
 }
 
-// NewUserHandler 创建 UserHandler 实例
 func NewUserHandler(userService *service.UserService) *UserHandler {
 	return &UserHandler{userService: userService}
 }
@@ -24,8 +23,7 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 func (h *UserHandler) Register(c *gin.Context) {
 	var req model.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		msg := parseBindError(err)
-		Fail(c, errcode.ErrParamInvalid, msg)
+		Fail(c, errcode.ErrParamInvalid, parseBindError(err))
 		return
 	}
 
@@ -46,12 +44,11 @@ func (h *UserHandler) Register(c *gin.Context) {
 func (h *UserHandler) Login(c *gin.Context) {
 	var req model.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		msg := parseBindError(err)
-		Fail(c, errcode.ErrParamInvalid, msg)
+		Fail(c, errcode.ErrParamInvalid, parseBindError(err))
 		return
 	}
 
-	resp, err := h.userService.Login(&req)
+	resp, err := h.userService.Login(c.Request.Context(), &req)
 	if err != nil {
 		msg := err.Error()
 		if msg == errcode.GetMsg(errcode.ErrUserNotFound) || msg == errcode.GetMsg(errcode.ErrPasswordWrong) {
@@ -65,7 +62,40 @@ func (h *UserHandler) Login(c *gin.Context) {
 	Success(c, resp)
 }
 
-// parseBindError 解析参数校验错误，返回具体的中文提示
+// Logout 登出接口
+func (h *UserHandler) Logout(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		Fail(c, errcode.ErrInvalidToken, "无效的用户ID")
+		return
+	}
+
+	if err := h.userService.Logout(c.Request.Context(), userID.(uint64)); err != nil {
+		Fail(c, errcode.ErrDBError, "登出失败")
+		return
+	}
+
+	Success(c, nil)
+}
+
+// GetProfile 获取用户信息接口
+func (h *UserHandler) GetProfile(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		Fail(c, errcode.ErrInvalidToken, "无效的用户ID")
+		return
+	}
+
+	user, err := h.userService.GetProfile(c.Request.Context(), userID.(uint64))
+	if err != nil {
+		Fail(c, errcode.ErrUserNotFound, "用户不存在")
+		return
+	}
+
+	Success(c, user)
+}
+
+// parseBindError 解析参数校验错误
 func parseBindError(err error) string {
 	var ve validator.ValidationErrors
 	if errors.As(err, &ve) {
@@ -97,21 +127,4 @@ func parseBindError(err error) string {
 		}
 	}
 	return "参数错误"
-}
-
-// GetProfile 获取用户信息接口
-func (h *UserHandler) GetProfile(c *gin.Context) {
-	userID, exists := c.Get("user_id")
-	if !exists {
-		Fail(c, errcode.ErrInvalidToken, "无效的用户ID")
-		return
-	}
-
-	user, err := h.userService.GetProfile(userID.(uint64))
-	if err != nil {
-		Fail(c, errcode.ErrUserNotFound, "用户不存在")
-		return
-	}
-
-	Success(c, user)
 }

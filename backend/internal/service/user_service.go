@@ -1,9 +1,14 @@
 package service
 
 import (
-	"errors"
+	"context"
 	"database/sql"
+	"errors"
+	"fmt"
+	"strconv"
+	"time"
 
+	"github.com/j1udu/cloud-storage-system/backend/internal/cache"
 	"github.com/j1udu/cloud-storage-system/backend/internal/model"
 	"github.com/j1udu/cloud-storage-system/backend/internal/pkg/errcode"
 	"github.com/j1udu/cloud-storage-system/backend/internal/pkg/hash"
@@ -11,17 +16,21 @@ import (
 	"github.com/j1udu/cloud-storage-system/backend/internal/repository"
 )
 
-// UserService 用户业务逻辑，持有 repo 和 JWT 配置
+// UserService 用户业务逻辑
 type UserService struct {
 	repo          *repository.UserRepo
+	userCache     *cache.UserCache
+	sessionCache  *cache.SessionCache
 	jwtSecret     string
 	jwtExpireHour int
 }
 
 // NewUserService 创建 UserService 实例
-func NewUserService(repo *repository.UserRepo, jwtSecret string, jwtExpireHour int) *UserService {
+func NewUserService(repo *repository.UserRepo, userCache *cache.UserCache, sessionCache *cache.SessionCache, jwtSecret string, jwtExpireHour int) *UserService {
 	return &UserService{
 		repo:          repo,
+		userCache:     userCache,
+		sessionCache:  sessionCache,
 		jwtSecret:     jwtSecret,
 		jwtExpireHour: jwtExpireHour,
 	}
@@ -29,7 +38,6 @@ func NewUserService(repo *repository.UserRepo, jwtSecret string, jwtExpireHour i
 
 // Register 注册
 func (s *UserService) Register(req *model.RegisterRequest) (*model.User, error) {
-	// 1. 检查用户名是否已存在
 	_, err := s.repo.GetByUsername(req.Username)
 	if err == nil {
 		return nil, errors.New(errcode.GetMsg(errcode.ErrUserExists))
@@ -38,13 +46,11 @@ func (s *UserService) Register(req *model.RegisterRequest) (*model.User, error) 
 		return nil, err
 	}
 
-	// 2. 加密密码
 	hashedPassword, err := hash.HashPassword(req.Password)
 	if err != nil {
 		return nil, err
 	}
 
-	// 3. 构造用户对象
 	user := &model.User{
 		Username: req.Username,
 		Password: hashedPassword,
@@ -54,23 +60,19 @@ func (s *UserService) Register(req *model.RegisterRequest) (*model.User, error) 
 		user.Nickname = user.Username
 	}
 
-	// 4. 存入数据库
 	if err := s.repo.Create(user); err != nil {
 		return nil, err
 	}
 
-	// 5. 查回完整用户信息（含数据库自动生成的字段）
 	created, err := s.repo.GetByID(user.ID)
 	if err != nil {
 		return user, nil
 	}
-
 	return created, nil
 }
 
 // Login 登录
-func (s *UserService) Login(req *model.LoginRequest) (*model.LoginResponse, error) {
-	// 1. 查用户
+func (s *UserService) Login(ctx context.Context, req *model.LoginRequest) (*model.LoginResponse, error) {
 	user, err := s.repo.GetByUsername(req.Username)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -79,18 +81,18 @@ func (s *UserService) Login(req *model.LoginRequest) (*model.LoginResponse, erro
 		return nil, err
 	}
 
-	// 2. 验证密码
 	if !hash.CheckPassword(req.Password, user.Password) {
 		return nil, errors.New(errcode.GetMsg(errcode.ErrPasswordWrong))
 	}
 
-	// 3. 生成 JWT 令牌
 	token, expiresAt, err := pkgjwt.GenerateToken(user.ID, s.jwtSecret, s.jwtExpireHour)
 	if err != nil {
 		return nil, err
 	}
 
-	// 4. 返回令牌和用户信息
+	// 登录成功，写入会话到 Redis
+	_ = s.sessionCache.Set(ctx, user.ID, token, expiresAt)
+
 	return &model.LoginResponse{
 		Token:     token,
 		ExpiresAt: expiresAt,
@@ -98,7 +100,43 @@ func (s *UserService) Login(req *model.LoginRequest) (*model.LoginResponse, erro
 	}, nil
 }
 
-// GetProfile 获取用户信息
-func (s *UserService) GetProfile(userID uint64) (*model.User, error) {
-	return s.repo.GetByID(userID)
+// GetProfile 获取用户信息（先查 Redis 缓存，未命中查数据库）
+func (s *UserService) GetProfile(ctx context.Context, userID uint64) (*model.User, error) {
+	// 1. 查缓存
+	cached, err := s.userCache.Get(ctx, userID)
+	if err == nil && cached != nil {
+		status, _ := strconv.Atoi(cached["status"])
+		createdAt, _ := time.Parse("2006-01-02T15:04:05.999Z07:00", cached["created_at"])
+		updatedAt, _ := time.Parse("2006-01-02T15:04:05.999Z07:00", cached["updated_at"])
+		return &model.User{
+			ID:        userID,
+			Username:  cached["username"],
+			Nickname:  cached["nickname"],
+			Status:    status,
+			CreatedAt: createdAt,
+			UpdatedAt: updatedAt,
+		}, nil
+	}
+
+	// 2. 缓存未命中，查数据库
+	user, err := s.repo.GetByID(userID)
+	if err != nil {
+		return nil, err
+	}
+
+	// 3. 写入缓存
+	_ = s.userCache.Set(ctx, userID, map[string]interface{}{
+		"username":   user.Username,
+		"nickname":   user.Nickname,
+		"status":     fmt.Sprintf("%d", user.Status),
+		"created_at": user.CreatedAt.Format("2006-01-02T15:04:05.999Z07:00"),
+		"updated_at": user.UpdatedAt.Format("2006-01-02T15:04:05.999Z07:00"),
+	})
+
+	return user, nil
+}
+
+// Logout 登出（删除 Redis 会话，使 token 失效）
+func (s *UserService) Logout(ctx context.Context, userID uint64) error {
+	return s.sessionCache.Delete(ctx, userID)
 }

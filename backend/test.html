@@ -100,7 +100,35 @@
 </div>
 
 <div class="card">
-    <h2>8. Ping</h2>
+    <h2>8. 创建文件夹</h2>
+    <label>父文件夹ID（0=根目录）</label>
+    <input type="number" id="folder-parent-id" value="0">
+    <label>文件夹名称</label>
+    <input type="text" id="folder-name" placeholder="输入文件夹名称">
+    <button class="btn-success" onclick="doCreateFolder()">创建</button>
+    <pre id="folder-result"></pre>
+</div>
+
+<div class="card">
+    <h2>9. 面包屑路径</h2>
+    <label>当前文件夹ID（0=根目录）</label>
+    <input type="number" id="path-folder-id" value="0">
+    <button class="btn-primary" onclick="doGetPath()">查询</button>
+    <pre id="path-result"></pre>
+</div>
+
+<div class="card">
+    <h2>10. 移动文件/文件夹</h2>
+    <label>要移动的文件/文件夹ID</label>
+    <input type="number" id="move-file-id" value="1">
+    <label>目标文件夹ID（0=根目录）</label>
+    <input type="number" id="move-target-id" value="0">
+    <button class="btn-warning" onclick="doMove()">移动</button>
+    <pre id="move-result"></pre>
+</div>
+
+<div class="card">
+    <h2>11. Ping</h2>
     <button class="btn-primary" onclick="doPing()">Ping</button>
     <pre id="ping-result"></pre>
 </div>
@@ -187,7 +215,8 @@ async function doList() {
         data.data.items.forEach(f => {
             const icon = f.dir ? '📁' : '📄'
             const size = f.dir ? '' : ' (' + formatSize(f.size) + ')'
-            html += '<div class="file-item"><span>' + icon + ' ' + f.name + size + '</span><span style="color:#999;font-size:12px">ID:' + f.id + '</span></div>'
+            const click = f.dir ? ' style="cursor:pointer" onclick="enterFolder(' + f.id + ')"' : ''
+            html += '<div class="file-item"' + click + '><span>' + icon + ' ' + f.name + size + '</span><span style="color:#999;font-size:12px">ID:' + f.id + '</span></div>'
         })
         html += '</div>'
         container.innerHTML = html
@@ -225,10 +254,45 @@ async function doRename() {
     if (data.code === 0) doList()
 }
 
+async function doCreateFolder() {
+    if (!token) { alert('请先登录'); return }
+    const name = document.getElementById('folder-name').value.trim()
+    if (!name) { alert('请输入文件夹名称'); return }
+    const data = await api('POST', '/folders', JSON.stringify({
+        parent_id: parseInt(document.getElementById('folder-parent-id').value),
+        name: name
+    }))
+    document.getElementById('folder-result').textContent = JSON.stringify(data, null, 2)
+    if (data.code === 0) doList()
+}
+
+async function doGetPath() {
+    if (!token) { alert('请先登录'); return }
+    const folderId = document.getElementById('path-folder-id').value
+    const data = await api('GET', '/folders/path?folder_id=' + folderId)
+    document.getElementById('path-result').textContent = JSON.stringify(data, null, 2)
+}
+
+async function doMove() {
+    if (!token) { alert('请先登录'); return }
+    const fileId = document.getElementById('move-file-id').value
+    const targetId = parseInt(document.getElementById('move-target-id').value)
+    const data = await api('PUT', '/files/' + fileId + '/move', JSON.stringify({ target_id: targetId }))
+    document.getElementById('move-result').textContent = JSON.stringify(data, null, 2)
+    if (data.code === 0) doList()
+}
+
 async function doPing() {
     const res = await fetch('http://localhost:8080/ping')
     const data = await res.json()
     document.getElementById('ping-result').textContent = JSON.stringify(data, null, 2)
+}
+
+function enterFolder(folderId) {
+    document.getElementById('list-folder-id').value = folderId
+    document.getElementById('path-folder-id').value = folderId
+    doList()
+    doGetPath()
 }
 
 function formatSize(bytes) {

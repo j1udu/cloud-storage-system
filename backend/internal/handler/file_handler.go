@@ -4,6 +4,7 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	"github.com/j1udu/cloud-storage-system/backend/internal/model"
 	"github.com/j1udu/cloud-storage-system/backend/internal/pkg/errcode"
 	"github.com/j1udu/cloud-storage-system/backend/internal/service"
 )
@@ -139,6 +140,77 @@ func (h *FileHandler) Rename(c *gin.Context) {
 	}
 
 	if err := h.fileService.Rename(userID.(uint64), fileID, req.Name); err != nil {
+		Fail(c, errcode.ErrParamInvalid, err.Error())
+		return
+	}
+
+	Success(c, nil)
+}
+
+// CreateFolder 创建文件夹
+func (h *FileHandler) CreateFolder(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		Fail(c, errcode.ErrInvalidToken, "无效的用户ID")
+		return
+	}
+
+	var req model.FolderCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Fail(c, errcode.ErrParamInvalid, "参数错误")
+		return
+	}
+
+	folder, err := h.fileService.CreateFolder(userID.(uint64), &req)
+	if err != nil {
+		Fail(c, errcode.ErrParamInvalid, err.Error())
+		return
+	}
+
+	Success(c, folder)
+}
+
+// GetPath 面包屑路径
+func (h *FileHandler) GetPath(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		Fail(c, errcode.ErrInvalidToken, "无效的用户ID")
+		return
+	}
+
+	folderIDStr := c.DefaultQuery("folder_id", "0")
+	folderID, _ := strconv.ParseUint(folderIDStr, 10, 64)
+
+	path, err := h.fileService.GetPath(userID.(uint64), folderID)
+	if err != nil {
+		Fail(c, errcode.ErrParamInvalid, err.Error())
+		return
+	}
+
+	Success(c, path)
+}
+
+// Move 移动文件/文件夹
+func (h *FileHandler) Move(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		Fail(c, errcode.ErrInvalidToken, "无效的用户ID")
+		return
+	}
+
+	fileID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		Fail(c, errcode.ErrParamInvalid, "无效的文件ID")
+		return
+	}
+
+	var req model.MoveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Fail(c, errcode.ErrParamInvalid, "参数错误")
+		return
+	}
+
+	if err := h.fileService.Move(userID.(uint64), fileID, req.TargetID); err != nil {
 		Fail(c, errcode.ErrParamInvalid, err.Error())
 		return
 	}

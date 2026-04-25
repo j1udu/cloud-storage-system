@@ -145,3 +145,102 @@ func (s *FileService) Rename(userID, fileID uint64, newName string) error {
 	}
 	return s.repo.UpdateName(fileID, newName)
 }
+
+// CreateFolder 创建文件夹
+func (s *FileService) CreateFolder(userID uint64, req *model.FolderCreateRequest) (*model.Matter, error) {
+	// 检查同名
+	exists, err := s.repo.ExistsByName(userID, req.ParentID, req.Name)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, fmt.Errorf("同名文件/文件夹已存在")
+	}
+
+	folder := &model.Matter{
+		UserID:   userID,
+		ParentID: req.ParentID,
+		Name:     req.Name,
+		Dir:      true,
+		Status:   1,
+	}
+	if err := s.repo.Create(folder); err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetByID(folder.ID)
+}
+
+// GetPath 面包屑路径：从当前文件夹往上追溯到根目录
+func (s *FileService) GetPath(userID, folderID uint64) ([]model.PathItem, error) {
+	if folderID == 0 {
+		return []model.PathItem{{ID: 0, Name: "根目录"}}, nil
+	}
+
+	// 确认文件夹属于当前用户
+	folder, err := s.repo.GetByID(folderID)
+	if err != nil {
+		return nil, fmt.Errorf("文件夹不存在")
+	}
+	if folder.UserID != userID {
+		return nil, fmt.Errorf("无权访问")
+	}
+
+	// 从当前文件夹往上追溯
+	var path []model.PathItem
+	currentID := folderID
+	for currentID != 0 {
+		m, err := s.repo.GetByID(currentID)
+		if err != nil {
+			break
+		}
+		path = append([]model.PathItem{{ID: m.ID, Name: m.Name}}, path...)
+		currentID = m.ParentID
+	}
+	// 最前面加上根目录
+	path = append([]model.PathItem{{ID: 0, Name: "根目录"}}, path...)
+
+	return path, nil
+}
+
+// Move 移动文件/文件夹
+func (s *FileService) Move(userID, fileID uint64, targetID uint64) error {
+	// 校验要移动的文件
+	matter, err := s.repo.GetByID(fileID)
+	if err != nil {
+		return fmt.Errorf("文件不存在")
+	}
+	if matter.UserID != userID {
+		return fmt.Errorf("无权操作此文件")
+	}
+
+	// 不能移到自己里面
+	if fileID == targetID {
+		return fmt.Errorf("不能移动到自身")
+	}
+
+	// targetID != 0 时校验目标文件夹
+	if targetID != 0 {
+		target, err := s.repo.GetByID(targetID)
+		if err != nil {
+			return fmt.Errorf("目标文件夹不存在")
+		}
+		if target.UserID != userID {
+			return fmt.Errorf("无权访问目标文件夹")
+		}
+		if !target.Dir {
+			return fmt.Errorf("目标不是文件夹")
+		}
+	}
+
+	// 检查目标位置有没有同名
+	exists, err := s.repo.ExistsByName(userID, targetID, matter.Name)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("目标位置存在同名文件")
+	}
+
+	return s.repo.UpdateParent(fileID, targetID)
+}

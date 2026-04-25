@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+	"github.com/j1udu/cloud-storage-system/backend/internal/cache"
 	"github.com/j1udu/cloud-storage-system/backend/internal/config"
 	"github.com/j1udu/cloud-storage-system/backend/internal/database"
 	"github.com/j1udu/cloud-storage-system/backend/internal/handler"
@@ -46,9 +47,11 @@ func main() {
 	objStorage := storage.NewObjectStorage(minioClient, cfg.MinIO.Bucket)
 	fmt.Println("MinIO 连接成功")
 
-	// 5. 依赖注入：创建 Repo → Service → Handler
+	// 5. 依赖注入：创建 Repo → Cache → Service → Handler
 	userRepo := repository.NewUserRepo(db)
-	userService := service.NewUserService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHour)
+	userCache := cache.NewUserCache(rdb)
+	sessionCache := cache.NewSessionCache(rdb)
+	userService := service.NewUserService(userRepo, userCache, sessionCache, cfg.JWT.Secret, cfg.JWT.ExpireHour)
 	userHandler := handler.NewUserHandler(userService)
 
 	fileRepo := repository.NewFileRepo(db)
