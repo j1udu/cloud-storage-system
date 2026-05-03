@@ -48,5 +48,5 @@ type PathItem struct {
 
 // MoveRequest 移动文件/文件夹请求
 type MoveRequest struct {
-	TargetID uint64 `json:"target_id" binding:"required"` // 目标文件夹ID，0=根目录
+	TargetID uint64 `json:"target_id"` // 目标文件夹ID，0=根目录
 }

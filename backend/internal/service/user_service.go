@@ -105,17 +105,24 @@ func (s *UserService) GetProfile(ctx context.Context, userID uint64) (*model.Use
 	// 1. 查缓存
 	cached, err := s.userCache.Get(ctx, userID)
 	if err == nil && cached != nil {
-		status, _ := strconv.Atoi(cached["status"])
-		createdAt, _ := time.Parse("2006-01-02T15:04:05.999Z07:00", cached["created_at"])
-		updatedAt, _ := time.Parse("2006-01-02T15:04:05.999Z07:00", cached["updated_at"])
-		return &model.User{
-			ID:        userID,
-			Username:  cached["username"],
-			Nickname:  cached["nickname"],
-			Status:    status,
-			CreatedAt: createdAt,
-			UpdatedAt: updatedAt,
-		}, nil
+		status, parseErr := strconv.Atoi(cached["status"])
+		if parseErr != nil {
+			s.userCache.Delete(ctx, userID)
+		} else {
+			createdAt, err1 := time.Parse("2006-01-02T15:04:05.999Z07:00", cached["created_at"])
+			updatedAt, err2 := time.Parse("2006-01-02T15:04:05.999Z07:00", cached["updated_at"])
+			if err1 == nil && err2 == nil {
+				return &model.User{
+					ID:        userID,
+					Username:  cached["username"],
+					Nickname:  cached["nickname"],
+					Status:    status,
+					CreatedAt: createdAt,
+					UpdatedAt: updatedAt,
+				}, nil
+			}
+			s.userCache.Delete(ctx, userID)
+		}
 	}
 
 	// 2. 缓存未命中，查数据库

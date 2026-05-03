@@ -192,7 +192,7 @@ func (s *FileService) GetPath(userID, folderID uint64) ([]model.PathItem, error)
 	for currentID != 0 {
 		m, err := s.repo.GetByID(currentID)
 		if err != nil {
-			break
+			return nil, fmt.Errorf("路径数据异常")
 		}
 		path = append([]model.PathItem{{ID: m.ID, Name: m.Name}}, path...)
 		currentID = m.ParentID

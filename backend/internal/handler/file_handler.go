@@ -179,7 +179,10 @@ func (h *FileHandler) GetPath(c *gin.Context) {
 	}
 
 	folderIDStr := c.DefaultQuery("folder_id", "0")
-	folderID, _ := strconv.ParseUint(folderIDStr, 10, 64)
+	folderID, err := strconv.ParseUint(folderIDStr, 10, 64)
+	if err != nil {
+		folderID = 0
+	}
 
 	path, err := h.fileService.GetPath(userID.(uint64), folderID)
 	if err != nil {
