@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -152,7 +154,10 @@ func (s *FileService) CreateFolder(userID uint64, req *model.FolderCreateRequest
 	if req.ParentID != 0 {
 		parent, err := s.repo.GetByID(req.ParentID)
 		if err != nil {
-			return nil, fmt.Errorf("父目录不存在")
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, fmt.Errorf("父目录不存在")
+			}
+			return nil, err
 		}
 		if parent.UserID != userID {
 			return nil, fmt.Errorf("无权访问父目录")
@@ -249,7 +254,7 @@ func (s *FileService) Move(userID, fileID uint64, targetID uint64) error {
 			}
 			ancestor, err := s.repo.GetByID(ancestorID)
 			if err != nil {
-				break
+				return fmt.Errorf("路径数据异常")
 			}
 			ancestorID = ancestor.ParentID
 		}

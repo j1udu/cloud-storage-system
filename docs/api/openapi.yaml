@@ -203,7 +203,7 @@ paths:
                 parent_id:
                   type: integer
                   format: int64
-                  minimum: 0
+            minimum: 0
                   default: 0
                   description: 目标文件夹ID，0表示根目录
       responses:
@@ -254,7 +254,7 @@ paths:
           schema:
             type: integer
             format: int64
-                  minimum: 0
+            minimum: 0
             default: 0
           description: 文件夹ID，0表示根目录
         - name: page
@@ -333,7 +333,7 @@ paths:
           schema:
             type: integer
             format: int64
-                  minimum: 0
+            minimum: 0
           description: 文件ID
       responses:
         '200':
@@ -385,7 +385,7 @@ paths:
           schema:
             type: integer
             format: int64
-                  minimum: 0
+            minimum: 0
           description: 文件ID
       responses:
         '200':
@@ -427,7 +427,7 @@ paths:
           schema:
             type: integer
             format: int64
-                  minimum: 0
+            minimum: 0
           description: 文件ID
       requestBody:
         required: true
@@ -482,7 +482,7 @@ paths:
           schema:
             type: integer
             format: int64
-                  minimum: 0
+            minimum: 0
           description: 要移动的文件/文件夹ID
       requestBody:
         required: true
@@ -589,7 +589,7 @@ paths:
           schema:
             type: integer
             format: int64
-                  minimum: 0
+            minimum: 0
             default: 0
           description: 当前文件夹ID，0表示根目录
       responses:
