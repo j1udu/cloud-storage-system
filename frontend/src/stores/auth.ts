@@ -10,8 +10,10 @@ interface AuthState {
   user: User | null;
 }
 
+// 认证状态集中放在 Pinia 中，页面和请求层都可以围绕它判断登录态。
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
+    // 初始化时读取 localStorage，使刷新页面后仍保留登录信息。
     token: getStoredToken(),
     expiresAt: getStoredExpiresAt(),
     user: getStoredUser(),
@@ -21,6 +23,7 @@ export const useAuthStore = defineStore('auth', {
   },
   actions: {
     persist() {
+      // 每次登录态变化后同步到 localStorage。
       persistAuth(this.token, this.expiresAt, this.user);
     },
     async login(payload: LoginRequest) {
@@ -31,12 +34,14 @@ export const useAuthStore = defineStore('auth', {
       this.persist();
     },
     async register(payload: RegisterRequest) {
+      // 注册成功后由页面决定是否跳转或切换到登录模式。
       await register(payload);
     },
     async refreshProfile() {
       if (!this.token) {
         return;
       }
+      // 用后端最新的用户信息覆盖本地缓存。
       this.user = await getProfile();
       this.persist();
     },

@@ -7,6 +7,7 @@ export interface ListFilesParams {
   page_size: number;
 }
 
+// 查询当前目录下的文件/文件夹，分页参数交给后端处理。
 export function listFiles(params: ListFilesParams) {
   const search = new URLSearchParams({
     folder_id: String(params.folder_id),
@@ -17,6 +18,7 @@ export function listFiles(params: ListFilesParams) {
   return request<FileListResponse>(`/files?${search.toString()}`);
 }
 
+// 文件上传必须使用 FormData，字段名 file/parent_id 需要与后端处理器一致。
 export function uploadFile(file: File, parentId: number) {
   const formData = new FormData();
   formData.append('file', file);
@@ -28,16 +30,19 @@ export function uploadFile(file: File, parentId: number) {
   });
 }
 
+// 后端返回的是对象存储的预签名 URL，前端拿到后再打开下载。
 export function getDownloadUrl(id: number) {
   return request<DownloadResponse>(`/files/${id}/download`);
 }
 
+// 删除操作目前对应后端软删除，成功后页面会刷新列表。
 export function deleteFile(id: number) {
   return request<null>(`/files/${id}`, {
     method: 'DELETE',
   });
 }
 
+// 重命名只需要提交新的 name，文件内容和存储对象不变。
 export function renameFile(id: number, name: string) {
   return request<null>(`/files/${id}/rename`, {
     method: 'PUT',

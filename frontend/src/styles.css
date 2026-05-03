@@ -1,4 +1,5 @@
 :root {
+  /* 全局视觉基调：统一字体、文本颜色和页面背景。 */
   color: #1f2937;
   background: #eef2f7;
   font-family:
@@ -14,6 +15,7 @@
 }
 
 body {
+  /* 保证页面至少铺满一屏，并移除浏览器默认外边距。 */
   min-width: 320px;
   min-height: 100vh;
   margin: 0;
@@ -24,6 +26,7 @@ button {
 }
 
 .auth-page {
+  /* 登录页居中展示认证面板，并用轻量背景区分入口页。 */
   display: grid;
   min-height: 100vh;
   place-items: center;
@@ -35,6 +38,7 @@ button {
 }
 
 .auth-panel {
+  /* 桌面端采用左品牌、右表单的两栏布局。 */
   display: grid;
   width: min(920px, 100%);
   grid-template-columns: 1fr 420px;
@@ -46,6 +50,7 @@ button {
 }
 
 .auth-brand {
+  /* 品牌区与表单区形成颜色对比，强化产品识别。 */
   display: flex;
   align-items: center;
   gap: 18px;
@@ -55,14 +60,15 @@ button {
 }
 
 .brand-mark {
+  /* 简单的品牌标识块，不依赖额外图片资源。 */
   display: grid;
   width: 64px;
   height: 64px;
   flex: 0 0 auto;
   place-items: center;
   border-radius: 8px;
-  background: #f2b84b;
-  color: #17324d;
+  background: #0076FF;
+  color: #fafafa;
   font-size: 30px;
   font-weight: 800;
 }
@@ -81,6 +87,7 @@ button {
 }
 
 .auth-form {
+  /* 表单区域留出足够内边距，避免控件贴边。 */
   padding: 44px 40px;
 }
 
@@ -99,11 +106,13 @@ button {
 }
 
 .files-page {
+  /* 文件管理页使用和登录页一致的浅色背景。 */
   min-height: 100vh;
   background: #eef2f7;
 }
 
 .topbar {
+  /* 顶栏承载当前产品名、用户信息和退出按钮。 */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -114,6 +123,7 @@ button {
 }
 
 .file-shell {
+  /* 文件表格主容器，限制最大宽度以保证宽屏阅读体验。 */
   width: min(1180px, calc(100% - 32px));
   margin: 24px auto;
   padding: 18px;
@@ -123,6 +133,7 @@ button {
 }
 
 .toolbar {
+  /* 工具栏左侧是面包屑，右侧是上传/刷新等操作。 */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -131,6 +142,7 @@ button {
 }
 
 .toolbar-actions {
+  /* 操作按钮允许换行，保证窄屏时不会溢出。 */
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -138,6 +150,7 @@ button {
 }
 
 .crumb-button {
+  /* 面包屑用 button 保留可点击语义，同时去掉默认按钮样式。 */
   border: 0;
   padding: 0;
   background: transparent;
@@ -146,6 +159,7 @@ button {
 }
 
 .hidden-input {
+  /* 文件选择框隐藏，由视觉按钮触发。 */
   display: none;
 }
 
@@ -154,6 +168,7 @@ button {
 }
 
 .file-name {
+  /* 文件名列自定义为按钮，方便文件夹点击进入。 */
   display: inline-flex;
   max-width: 100%;
   align-items: center;
@@ -170,6 +185,7 @@ button {
 }
 
 .file-name span {
+  /* 长文件名在表格中省略，避免撑破列宽。 */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -177,17 +193,19 @@ button {
 
 .file-name .el-icon {
   flex: 0 0 auto;
-  color: #d19223;
+  color: #3723d1;
   font-size: 20px;
 }
 
 .pagination-row {
+  /* 分页靠右放置，和常见后台表格交互保持一致。 */
   display: flex;
   justify-content: flex-end;
   padding-top: 16px;
 }
 
 @media (max-width: 760px) {
+  /* 小屏幕下把两栏/横向布局改为纵向排列。 */
   .auth-panel {
     grid-template-columns: 1fr;
   }

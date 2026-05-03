@@ -1,10 +1,12 @@
 {
   "compilerOptions": {
+    // 面向现代浏览器输出，保留较新的 JavaScript 语法能力。
     "target": "ES2022",
     "useDefineForClassFields": true,
     "module": "ESNext",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "skipLibCheck": true,
+    // Vite 推荐使用 bundler 模式，让 TypeScript 的解析规则贴近前端打包器。
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
@@ -15,10 +17,11 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      // 与 vite.config.ts 中的 @ 别名保持一致；未设置 baseUrl 时相对 tsconfig.json 所在目录解析。
+      "@/*": ["./src/*"]
     }
   },
+  // vue-tsc 会读取这些文件做类型检查。
   "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue"]
 }

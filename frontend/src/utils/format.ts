@@ -1,3 +1,4 @@
+// 把后端返回的字节数转换为适合表格展示的文件大小。
 export function formatBytes(size: number) {
   if (!size) {
     return '-';
@@ -15,6 +16,7 @@ export function formatBytes(size: number) {
   return `${value.toFixed(value >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
 }
 
+// 将后端时间字符串格式化为中文日期时间，供文件列表展示。
 export function formatDate(value: string) {
   if (!value) {
     return '-';

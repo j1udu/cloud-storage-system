@@ -26,6 +26,7 @@ interface FolderCrumb {
 const router = useRouter();
 const authStore = useAuthStore();
 
+// 页面状态拆成列表加载、上传、重命名弹窗等几类，分别驱动不同 UI。
 const loading = ref(false);
 const uploadInputRef = ref<HTMLInputElement>();
 const uploadLoading = ref(false);
@@ -43,9 +44,11 @@ const renameForm = reactive({
   name: '',
 });
 
+// 当前目录由面包屑的最后一个节点决定，根目录 id 约定为 0。
 const currentFolderId = computed(() => crumbs.value[crumbs.value.length - 1]?.id || 0);
 
 async function fetchFiles() {
+  // 文件列表查询依赖当前目录和分页参数，成功后同步表格数据和总数。
   loading.value = true;
   try {
     const data = await listFiles({
@@ -63,6 +66,7 @@ async function fetchFiles() {
 }
 
 function openFolder(row: Matter) {
+  // 双击或点击文件夹时进入下一级；普通文件没有目录行为。
   if (!row.dir) {
     return;
   }
@@ -72,18 +76,21 @@ function openFolder(row: Matter) {
 }
 
 function jumpToCrumb(index: number) {
+  // 点击面包屑会截断路径，回到历史目录层级。
   crumbs.value = crumbs.value.slice(0, index + 1);
   query.page = 1;
   void fetchFiles();
 }
 
 function pickFile() {
+  // 使用隐藏 input 保留浏览器原生文件选择能力，同时让按钮样式保持统一。
   uploadInputRef.value?.click();
 }
 
 async function handleUpload(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
+  // 清空 input，保证连续选择同一个文件时也会触发 change。
   input.value = '';
 
   if (!file) {
@@ -104,6 +111,7 @@ async function handleUpload(event: Event) {
 
 async function download(row: Matter) {
   try {
+    // 后端只返回预签名 URL，真正的文件下载由对象存储链接完成。
     const data = await getDownloadUrl(row.id);
     window.open(data.url, '_blank', 'noopener,noreferrer');
   } catch (error) {
@@ -112,12 +120,14 @@ async function download(row: Matter) {
 }
 
 function openRename(row: Matter) {
+  // 打开弹窗前记录当前文件，并用原文件名初始化输入框。
   currentFile.value = row;
   renameForm.name = row.name;
   renameVisible.value = true;
 }
 
 async function submitRename() {
+  // 前端先做最基本的空值保护，详细规则仍以后端校验为准。
   if (!currentFile.value || !renameForm.name.trim()) {
     ElMessage.warning('请输入新名称');
     return;
@@ -138,6 +148,7 @@ async function submitRename() {
 
 async function remove(row: Matter) {
   try {
+    // 删除是高风险操作，先让用户确认，避免误触。
     await ElMessageBox.confirm(`确定删除“${row.name}”吗？`, '删除文件', {
       type: 'warning',
       confirmButtonText: '删除',
@@ -154,16 +165,19 @@ async function remove(row: Matter) {
 }
 
 async function logout() {
+  // 退出时清空本地登录态，再回到登录页。
   authStore.logout();
   await router.replace('/login');
 }
 
 function handlePageChange(page: number) {
+  // Element Plus 分页组件只负责发出页码变化，实际数据仍由 fetchFiles 拉取。
   query.page = page;
   void fetchFiles();
 }
 
 onMounted(async () => {
+  // 进入文件页后尝试刷新用户信息，即使失败也继续拉取文件列表并交给接口层处理鉴权。
   await authStore.refreshProfile().catch(() => undefined);
   await fetchFiles();
 });
@@ -171,6 +185,7 @@ onMounted(async () => {
 
 <template>
   <main class="files-page">
+    <!-- 顶栏展示当前用户信息，并提供退出入口。 -->
     <header class="topbar">
       <div>
         <h1>个人云盘</h1>
@@ -181,6 +196,7 @@ onMounted(async () => {
 
     <section class="file-shell">
       <div class="toolbar">
+        <!-- 面包屑表示当前目录层级，点击任意层级可返回。 -->
         <el-breadcrumb separator="/">
           <el-breadcrumb-item v-for="(item, index) in crumbs" :key="item.id">
             <button class="crumb-button" type="button" @click="jumpToCrumb(index)">
@@ -190,12 +206,14 @@ onMounted(async () => {
         </el-breadcrumb>
 
         <div class="toolbar-actions">
+          <!-- 隐藏原生文件输入框，由上传按钮触发它。 -->
           <input ref="uploadInputRef" class="hidden-input" type="file" @change="handleUpload" />
           <el-button type="primary" :icon="UploadFilled" :loading="uploadLoading" @click="pickFile">上传文件</el-button>
           <el-button :icon="Refresh" @click="fetchFiles">刷新</el-button>
         </div>
       </div>
 
+      <!-- 文件和文件夹共用同一张表，dir 字段决定图标和可操作项。 -->
       <el-table
         v-loading="loading"
         :data="files"
@@ -243,6 +261,7 @@ onMounted(async () => {
         </el-table-column>
       </el-table>
 
+      <!-- 分页状态由 query 管理，切页后重新请求后端。 -->
       <div class="pagination-row">
         <el-pagination
           background
@@ -255,6 +274,7 @@ onMounted(async () => {
       </div>
     </section>
 
+    <!-- 重命名弹窗复用 currentFile 和 renameForm 两个状态。 -->
     <el-dialog v-model="renameVisible" title="重命名" width="420px">
       <el-input v-model.trim="renameForm.name" placeholder="请输入新名称" @keyup.enter="submitRename" />
       <template #footer>
