@@ -1,6 +1,6 @@
 // 把后端返回的字节数转换为适合表格展示的文件大小。
 export function formatBytes(size: number) {
-  if (!size) {
+  if (size == null || !Number.isFinite(size)) {
     return '-';
   }
 

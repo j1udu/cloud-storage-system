@@ -158,6 +158,7 @@ async function remove(row: Matter) {
     ElMessage.success('删除成功');
     await fetchFiles();
   } catch (error) {
+    // console.log('捕获到的错误：', error);
     if (error !== 'cancel') {
       showApiError(error, '删除失败');
     }

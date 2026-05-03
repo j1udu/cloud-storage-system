@@ -32,8 +32,9 @@ const router = createRouter({
 // 全局路由守卫：根据登录状态决定是否允许进入目标页面。
 router.beforeEach((to) => {
   const authStore = useAuthStore();
+  authStore.clearExpiredAuth();
 
-  // 需要登录的页面没有 token 时，跳回登录页并记录原始目标地址。
+  // 需要登录的页面没有有效 token 时，跳回登录页并记录原始目标地址。
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     return { name: 'login', query: { redirect: to.fullPath } };
   }

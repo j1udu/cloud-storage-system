@@ -10,7 +10,13 @@ export function getStoredToken() {
 }
 
 export function getStoredExpiresAt() {
-  return Number(localStorage.getItem(expiresAtKey)) || null;
+  const raw = localStorage.getItem(expiresAtKey);
+  if (raw === null) {
+    return null;
+  }
+
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
 }
 
 export function getStoredUser() {
@@ -35,7 +41,7 @@ export function persistAuth(token: string, expiresAt: number | null, user: User 
     localStorage.removeItem(tokenKey);
   }
 
-  if (expiresAt) {
+  if (expiresAt !== null && Number.isFinite(expiresAt)) {
     localStorage.setItem(expiresAtKey, String(expiresAt));
   } else {
     localStorage.removeItem(expiresAtKey);

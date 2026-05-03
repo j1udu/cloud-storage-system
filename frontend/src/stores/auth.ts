@@ -10,6 +10,10 @@ interface AuthState {
   user: User | null;
 }
 
+function getCurrentUnixTime() {
+  return Math.floor(Date.now() / 1000);
+}
+
 // 认证状态集中放在 Pinia 中，页面和请求层都可以围绕它判断登录态。
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
@@ -19,7 +23,7 @@ export const useAuthStore = defineStore('auth', {
     user: getStoredUser(),
   }),
   getters: {
-    isAuthenticated: (state) => Boolean(state.token),
+    isAuthenticated: (state) => Boolean(state.token && state.expiresAt && state.expiresAt > getCurrentUnixTime()),
   },
   actions: {
     persist() {
@@ -38,12 +42,18 @@ export const useAuthStore = defineStore('auth', {
       await register(payload);
     },
     async refreshProfile() {
-      if (!this.token) {
+      if (!this.isAuthenticated) {
+        this.logout();
         return;
       }
       // 用后端最新的用户信息覆盖本地缓存。
       this.user = await getProfile();
       this.persist();
+    },
+    clearExpiredAuth() {
+      if (this.token && !this.isAuthenticated) {
+        this.logout();
+      }
     },
     logout() {
       this.token = '';
