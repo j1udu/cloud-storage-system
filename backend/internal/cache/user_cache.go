@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -34,7 +35,11 @@ func (c *UserCache) Get(ctx context.Context, userID uint64) (map[string]string, 
 
 // Set 写缓存，TTL 10分钟
 func (c *UserCache) Set(ctx context.Context, userID uint64, data map[string]interface{}) error {
-	return c.rdb.HSet(ctx, userCacheKey(userID), data).Err()
+	pipe := c.rdb.Pipeline()
+	pipe.HSet(ctx, userCacheKey(userID), data)
+	pipe.Expire(ctx, userCacheKey(userID), 10*time.Minute)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 // Delete 删缓存（修改用户信息后调用）

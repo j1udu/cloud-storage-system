@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -20,21 +21,28 @@ func sessionKey(userID uint64) string {
 	return fmt.Sprintf("cloud:session:%d", userID)
 }
 
-// Set 登录成功后写入会话
+// Set 登录成功后写入会话，TTL 与 JWT 过期时间一致
 func (c *SessionCache) Set(ctx context.Context, userID uint64, token string, expiresAt int64) error {
 	data := map[string]interface{}{
 		"token":     token,
 		"expiresAt": expiresAt,
 	}
-	return c.rdb.HSet(ctx, sessionKey(userID), data).Err()
+	ttl := time.Until(time.Unix(expiresAt, 0))
+	if ttl <= 0 {
+		ttl = time.Minute
+	}
+	pipe := c.rdb.Pipeline()
+	pipe.HSet(ctx, sessionKey(userID), data)
+	pipe.Expire(ctx, sessionKey(userID), ttl)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
-// IsValid 校验 token 是否仍然有效（登出后会被删除）
+// IsValid 校验 token 是否仍然有效（白名单模式：必须命中且 token 匹配才放行）
 func (c *SessionCache) IsValid(ctx context.Context, userID uint64, token string) (bool, error) {
 	stored, err := c.rdb.HGet(ctx, sessionKey(userID), "token").Result()
 	if err == redis.Nil {
-		// 没有会话记录，说明没有登出过，token 本身有效就放行
-		return true, nil
+		return false, nil
 	}
 	if err != nil {
 		return false, err

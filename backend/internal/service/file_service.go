@@ -148,6 +148,20 @@ func (s *FileService) Rename(userID, fileID uint64, newName string) error {
 
 // CreateFolder 创建文件夹
 func (s *FileService) CreateFolder(userID uint64, req *model.FolderCreateRequest) (*model.Matter, error) {
+	// 校验父目录有效性
+	if req.ParentID != 0 {
+		parent, err := s.repo.GetByID(req.ParentID)
+		if err != nil {
+			return nil, fmt.Errorf("父目录不存在")
+		}
+		if parent.UserID != userID {
+			return nil, fmt.Errorf("无权访问父目录")
+		}
+		if !parent.Dir {
+			return nil, fmt.Errorf("父目标不是文件夹")
+		}
+	}
+
 	// 检查同名
 	exists, err := s.repo.ExistsByName(userID, req.ParentID, req.Name)
 	if err != nil {
@@ -185,17 +199,24 @@ func (s *FileService) GetPath(userID, folderID uint64) ([]model.PathItem, error)
 	if folder.UserID != userID {
 		return nil, fmt.Errorf("无权访问")
 	}
+	if !folder.Dir {
+		return nil, fmt.Errorf("目标不是文件夹")
+	}
 
-	// 从当前文件夹往上追溯
-	var path []model.PathItem
-	currentID := folderID
+	// 从当前文件夹往上追溯，先按从当前到根的顺序追加，最后反转
+	path := []model.PathItem{{ID: folder.ID, Name: folder.Name}}
+	currentID := folder.ParentID
 	for currentID != 0 {
 		m, err := s.repo.GetByID(currentID)
 		if err != nil {
 			return nil, fmt.Errorf("路径数据异常")
 		}
-		path = append([]model.PathItem{{ID: m.ID, Name: m.Name}}, path...)
+		path = append(path, model.PathItem{ID: m.ID, Name: m.Name})
 		currentID = m.ParentID
+	}
+	// 反转：从根到当前
+	for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
+		path[i], path[j] = path[j], path[i]
 	}
 	// 最前面加上根目录
 	path = append([]model.PathItem{{ID: 0, Name: "根目录"}}, path...)
@@ -217,6 +238,21 @@ func (s *FileService) Move(userID, fileID uint64, targetID uint64) error {
 	// 不能移到自己里面
 	if fileID == targetID {
 		return fmt.Errorf("不能移动到自身")
+	}
+
+	// 不能把文件夹移到自己的子孙目录（会形成循环引用）
+	if matter.Dir && targetID != 0 {
+		ancestorID := targetID
+		for ancestorID != 0 {
+			if ancestorID == fileID {
+				return fmt.Errorf("不能移动到自身的子目录")
+			}
+			ancestor, err := s.repo.GetByID(ancestorID)
+			if err != nil {
+				break
+			}
+			ancestorID = ancestor.ParentID
+		}
 	}
 
 	// targetID != 0 时校验目标文件夹
