@@ -83,6 +83,9 @@ func (s *FileService) Download(ctx context.Context, userID, fileID uint64) (stri
 	if matter.UserID != userID {
 		return "", fmt.Errorf("无权访问此文件")
 	}
+	if matter.Status != 1 {
+		return "", fmt.Errorf("文件已被删除")
+	}
 	if matter.Dir {
 		return "", fmt.Errorf("文件夹不能下载")
 	}
@@ -133,6 +136,9 @@ func (s *FileService) Delete(userID, fileID uint64) error {
 	if matter.UserID != userID {
 		return fmt.Errorf("无权操作此文件")
 	}
+	if matter.Status != 1 {
+		return fmt.Errorf("文件已被删除")
+	}
 	return s.repo.UpdateStatus(fileID, 2)
 }
 
@@ -144,6 +150,9 @@ func (s *FileService) Rename(userID, fileID uint64, newName string) error {
 	}
 	if matter.UserID != userID {
 		return fmt.Errorf("无权操作此文件")
+	}
+	if matter.Status != 1 {
+		return fmt.Errorf("文件已被删除")
 	}
 	return s.repo.UpdateName(fileID, newName)
 }
@@ -238,6 +247,9 @@ func (s *FileService) Move(userID, fileID uint64, targetID uint64) error {
 	}
 	if matter.UserID != userID {
 		return fmt.Errorf("无权操作此文件")
+	}
+	if matter.Status != 1 {
+		return fmt.Errorf("文件已被删除")
 	}
 
 	// 不能移到自己里面

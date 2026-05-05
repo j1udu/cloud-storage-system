@@ -50,8 +50,7 @@ func main() {
 	// 5. 依赖注入：创建 Repo → Cache → Service → Handler
 	userRepo := repository.NewUserRepo(db)
 	userCache := cache.NewUserCache(rdb)
-	sessionCache := cache.NewSessionCache(rdb)
-	userService := service.NewUserService(userRepo, userCache, sessionCache, cfg.JWT.Secret, cfg.JWT.ExpireHour)
+	userService := service.NewUserService(userRepo, userCache, cfg.JWT.Secret, cfg.JWT.ExpireHour)
 	userHandler := handler.NewUserHandler(userService)
 
 	fileRepo := repository.NewFileRepo(db)

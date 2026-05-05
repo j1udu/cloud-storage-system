@@ -20,17 +20,15 @@ import (
 type UserService struct {
 	repo          *repository.UserRepo
 	userCache     *cache.UserCache
-	sessionCache  *cache.SessionCache
 	jwtSecret     string
 	jwtExpireHour int
 }
 
 // NewUserService 创建 UserService 实例
-func NewUserService(repo *repository.UserRepo, userCache *cache.UserCache, sessionCache *cache.SessionCache, jwtSecret string, jwtExpireHour int) *UserService {
+func NewUserService(repo *repository.UserRepo, userCache *cache.UserCache, jwtSecret string, jwtExpireHour int) *UserService {
 	return &UserService{
 		repo:          repo,
 		userCache:     userCache,
-		sessionCache:  sessionCache,
 		jwtSecret:     jwtSecret,
 		jwtExpireHour: jwtExpireHour,
 	}
@@ -90,9 +88,6 @@ func (s *UserService) Login(ctx context.Context, req *model.LoginRequest) (*mode
 		return nil, err
 	}
 
-	// 登录成功，写入会话到 Redis
-	_ = s.sessionCache.Set(ctx, user.ID, token, expiresAt)
-
 	return &model.LoginResponse{
 		Token:     token,
 		ExpiresAt: expiresAt,
@@ -143,7 +138,7 @@ func (s *UserService) GetProfile(ctx context.Context, userID uint64) (*model.Use
 	return user, nil
 }
 
-// Logout 登出（删除 Redis 会话，使 token 失效）
+// Logout 登出
 func (s *UserService) Logout(ctx context.Context, userID uint64) error {
-	return s.sessionCache.Delete(ctx, userID)
+	return nil
 }
