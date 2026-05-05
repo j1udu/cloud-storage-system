@@ -19,6 +19,8 @@ go.work
 
 # Dependency directories
 vendor/
+node_modules/
+frontend/.tools/
 
 # IDE
 .idea/
@@ -45,6 +47,8 @@ backend/internal/config/config.prod.yaml
 # Build output
 /dist/
 /build/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
 
 # Logs
 *.log
