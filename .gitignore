@@ -22,6 +22,9 @@ vendor/
 node_modules/
 frontend/.tools/
 
+# Node
+frontend/node_modules/
+
 # IDE
 .idea/
 .vscode/
@@ -49,6 +52,17 @@ backend/internal/config/config.prod.yaml
 /build/
 frontend/dist/
 frontend/tsconfig.tsbuildinfo
+
+# Vite / Vue
+frontend/.vite/
+frontend/.output/
+
+# TypeScript
+*.tsbuildinfo
+
+# ESLint / Prettier cache
+frontend/.eslintcache
+frontend/.prettiercache
 
 # Logs
 *.log
