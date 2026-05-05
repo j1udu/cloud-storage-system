@@ -26,6 +26,7 @@ func Setup(r *gin.Engine, userHandler *handler.UserHandler, fileHandler *handler
 	authRequired.Use(middleware.AuthMiddleware(jwtSecret))
 	{
 		authRequired.GET("/auth/profile", userHandler.GetProfile)
+		authRequired.POST("/auth/logout", userHandler.Logout)
 
 		// 文件管理
 		authRequired.POST("/files/upload", fileHandler.Upload)
@@ -33,5 +34,10 @@ func Setup(r *gin.Engine, userHandler *handler.UserHandler, fileHandler *handler
 		authRequired.GET("/files/:id/download", fileHandler.Download)
 		authRequired.DELETE("/files/:id", fileHandler.Delete)
 		authRequired.PUT("/files/:id/rename", fileHandler.Rename)
+		authRequired.PUT("/files/:id/move", fileHandler.Move)
+
+		// 文件夹管理
+		authRequired.POST("/folders", fileHandler.CreateFolder)
+		authRequired.GET("/folders/path", fileHandler.GetPath)
 	}
 }

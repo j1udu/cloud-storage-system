@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -81,6 +83,9 @@ func (s *FileService) Download(ctx context.Context, userID, fileID uint64) (stri
 	if matter.UserID != userID {
 		return "", fmt.Errorf("无权访问此文件")
 	}
+	if matter.Status != 1 {
+		return "", fmt.Errorf("文件已被删除")
+	}
 	if matter.Dir {
 		return "", fmt.Errorf("文件夹不能下载")
 	}
@@ -131,6 +136,9 @@ func (s *FileService) Delete(userID, fileID uint64) error {
 	if matter.UserID != userID {
 		return fmt.Errorf("无权操作此文件")
 	}
+	if matter.Status != 1 {
+		return fmt.Errorf("文件已被删除")
+	}
 	return s.repo.UpdateStatus(fileID, 2)
 }
 
@@ -143,5 +151,149 @@ func (s *FileService) Rename(userID, fileID uint64, newName string) error {
 	if matter.UserID != userID {
 		return fmt.Errorf("无权操作此文件")
 	}
+	if matter.Status != 1 {
+		return fmt.Errorf("文件已被删除")
+	}
 	return s.repo.UpdateName(fileID, newName)
+}
+
+// CreateFolder 创建文件夹
+func (s *FileService) CreateFolder(userID uint64, req *model.FolderCreateRequest) (*model.Matter, error) {
+	// 校验父目录有效性
+	if req.ParentID != 0 {
+		parent, err := s.repo.GetByID(req.ParentID)
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, fmt.Errorf("父目录不存在")
+			}
+			return nil, err
+		}
+		if parent.UserID != userID {
+			return nil, fmt.Errorf("无权访问父目录")
+		}
+		if !parent.Dir {
+			return nil, fmt.Errorf("父目标不是文件夹")
+		}
+	}
+
+	// 检查同名
+	exists, err := s.repo.ExistsByName(userID, req.ParentID, req.Name)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, fmt.Errorf("同名文件/文件夹已存在")
+	}
+
+	folder := &model.Matter{
+		UserID:   userID,
+		ParentID: req.ParentID,
+		Name:     req.Name,
+		Dir:      true,
+		Status:   1,
+	}
+	if err := s.repo.Create(folder); err != nil {
+		return nil, err
+	}
+
+	return s.repo.GetByID(folder.ID)
+}
+
+// GetPath 面包屑路径：从当前文件夹往上追溯到根目录
+func (s *FileService) GetPath(userID, folderID uint64) ([]model.PathItem, error) {
+	if folderID == 0 {
+		return []model.PathItem{{ID: 0, Name: "根目录"}}, nil
+	}
+
+	// 确认文件夹属于当前用户
+	folder, err := s.repo.GetByID(folderID)
+	if err != nil {
+		return nil, fmt.Errorf("文件夹不存在")
+	}
+	if folder.UserID != userID {
+		return nil, fmt.Errorf("无权访问")
+	}
+	if !folder.Dir {
+		return nil, fmt.Errorf("目标不是文件夹")
+	}
+
+	// 从当前文件夹往上追溯，先按从当前到根的顺序追加，最后反转
+	path := []model.PathItem{{ID: folder.ID, Name: folder.Name}}
+	currentID := folder.ParentID
+	for currentID != 0 {
+		m, err := s.repo.GetByID(currentID)
+		if err != nil {
+			return nil, fmt.Errorf("路径数据异常")
+		}
+		path = append(path, model.PathItem{ID: m.ID, Name: m.Name})
+		currentID = m.ParentID
+	}
+	// 反转：从根到当前
+	for i, j := 0, len(path)-1; i < j; i, j = i+1, j-1 {
+		path[i], path[j] = path[j], path[i]
+	}
+	// 最前面加上根目录
+	path = append([]model.PathItem{{ID: 0, Name: "根目录"}}, path...)
+
+	return path, nil
+}
+
+// Move 移动文件/文件夹
+func (s *FileService) Move(userID, fileID uint64, targetID uint64) error {
+	// 校验要移动的文件
+	matter, err := s.repo.GetByID(fileID)
+	if err != nil {
+		return fmt.Errorf("文件不存在")
+	}
+	if matter.UserID != userID {
+		return fmt.Errorf("无权操作此文件")
+	}
+	if matter.Status != 1 {
+		return fmt.Errorf("文件已被删除")
+	}
+
+	// 不能移到自己里面
+	if fileID == targetID {
+		return fmt.Errorf("不能移动到自身")
+	}
+
+	// 不能把文件夹移到自己的子孙目录（会形成循环引用）
+	if matter.Dir && targetID != 0 {
+		ancestorID := targetID
+		for ancestorID != 0 {
+			if ancestorID == fileID {
+				return fmt.Errorf("不能移动到自身的子目录")
+			}
+			ancestor, err := s.repo.GetByID(ancestorID)
+			if err != nil {
+				return fmt.Errorf("路径数据异常")
+			}
+			ancestorID = ancestor.ParentID
+		}
+	}
+
+	// targetID != 0 时校验目标文件夹
+	if targetID != 0 {
+		target, err := s.repo.GetByID(targetID)
+		if err != nil {
+			return fmt.Errorf("目标文件夹不存在")
+		}
+		if target.UserID != userID {
+			return fmt.Errorf("无权访问目标文件夹")
+		}
+		if !target.Dir {
+			return fmt.Errorf("目标不是文件夹")
+		}
+	}
+
+	// 检查目标位置有没有同名
+	exists, err := s.repo.ExistsByName(userID, targetID, matter.Name)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("目标位置存在同名文件")
+	}
+
+	return s.repo.UpdateParent(fileID, targetID)
 }

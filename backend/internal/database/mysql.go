@@ -12,7 +12,7 @@ import (
 // InitMySQL 创建并返回一个 MySQL 连接池
 func InitMySQL(cfg config.MySQLConfig) (*sql.DB, error) {
 	// 拼接连接字符串: user:password@tcp(host:port)/database
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&loc=Local",
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&loc=UTC",
 		cfg.User,
 		cfg.Password,
 		cfg.Host,

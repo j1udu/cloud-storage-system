@@ -86,3 +86,26 @@ func (r *FileRepo) UpdateStatus(id uint64, status int) error {
 	_, err := r.db.Exec("UPDATE matter SET status = ? WHERE id = ?", status, id)
 	return err
 }
+
+// ExistsByName 检查同一文件夹下是否存在同名文件/文件夹
+func (r *FileRepo) ExistsByName(userID, parentID uint64, name string) (bool, error) {
+	var count int64
+	err := r.db.QueryRow(
+		"SELECT COUNT(*) FROM matter WHERE user_id = ? AND parent_id = ? AND name = ? AND status = 1",
+		userID, parentID, name,
+	).Scan(&count)
+	return count > 0, err
+}
+
+// GetParentID 查询某个文件/文件夹的 parent_id
+func (r *FileRepo) GetParentID(id uint64) (uint64, error) {
+	var parentID uint64
+	err := r.db.QueryRow("SELECT parent_id FROM matter WHERE id = ?", id).Scan(&parentID)
+	return parentID, err
+}
+
+// UpdateParent 移动文件/文件夹到新的父文件夹
+func (r *FileRepo) UpdateParent(id uint64, parentID uint64) error {
+	_, err := r.db.Exec("UPDATE matter SET parent_id = ? WHERE id = ?", parentID, id)
+	return err
+}
