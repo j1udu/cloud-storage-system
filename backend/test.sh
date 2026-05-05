@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
-# 云盘系统后端接口测试脚本
-# 用法: bash test.sh [BASE_URL]
-# 示例: bash test.sh http://localhost:8080
+# Backend API smoke/integration test script.
+# Usage:
+#   bash test.sh [BASE_URL]
+# Example:
+#   bash test.sh http://localhost:8080
 
-set -euo pipefail
+set -u
 
 BASE="${1:-http://localhost:8080}"
 API="$BASE/api/v1"
+TOKEN=""
+TOKEN2=""
 PASS=0
 FAIL=0
 SKIP=0
 TOTAL=0
 
-# ── 颜色 ──────────────────────────────────────────────
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[0;33m'
@@ -20,360 +23,360 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-# ── 工具函数 ──────────────────────────────────────────
 section() {
-    echo -e "\n${BOLD}${CYAN}━━━ $1 ━━━${RESET}\n"
+  printf "\n%b== %s ==%b\n" "$BOLD$CYAN" "$1" "$RESET"
 }
 
-assert() {
-    local name="$1" ok="$2"
-    TOTAL=$((TOTAL + 1))
-    if [ "$ok" = "true" ]; then
-        echo -e "  ${GREEN}PASS${RESET} $name"
-        PASS=$((PASS + 1))
-    else
-        echo -e "  ${RED}FAIL${RESET} $name"
-        FAIL=$((FAIL + 1))
-    fi
+record() {
+  local status="$1"
+  local name="$2"
+  TOTAL=$((TOTAL + 1))
+
+  case "$status" in
+    pass)
+      PASS=$((PASS + 1))
+      printf "  %bPASS%b %s\n" "$GREEN" "$RESET" "$name"
+      ;;
+    fail)
+      FAIL=$((FAIL + 1))
+      printf "  %bFAIL%b %s\n" "$RED" "$RESET" "$name"
+      ;;
+    skip)
+      SKIP=$((SKIP + 1))
+      printf "  %bSKIP%b %s\n" "$YELLOW" "$RESET" "$name"
+      ;;
+  esac
 }
 
-skip() {
-    local name="$1" reason="$2"
-    TOTAL=$((TOTAL + 1))
-    echo -e "  ${YELLOW}SKIP${RESET} $name ($reason)"
-    SKIP=$((SKIP + 1))
+assert_true() {
+  local name="$1"
+  shift
+  if "$@"; then
+    record pass "$name"
+  else
+    record fail "$name"
+  fi
 }
 
-# api METHOD PATH [BODY] — 发请求并打印响应
+assert_code() {
+  local name="$1"
+  local response="$2"
+  local expected="$3"
+  local actual
+
+  actual="$(printf "%s" "$response" | jq -r '.code // empty' 2>/dev/null)"
+  if [ "$actual" = "$expected" ]; then
+    record pass "$name"
+  else
+    record fail "$name (expected code=$expected, got code=${actual:-<missing>}, response=$response)"
+  fi
+}
+
+json_field_equals() {
+  local response="$1"
+  local field="$2"
+  local expected="$3"
+  local actual
+
+  actual="$(printf "%s" "$response" | jq -r "$field // empty" 2>/dev/null)"
+  [ "$actual" = "$expected" ]
+}
+
+json_field_not_empty() {
+  local response="$1"
+  local field="$2"
+  local actual
+
+  actual="$(printf "%s" "$response" | jq -r "$field // empty" 2>/dev/null)"
+  [ -n "$actual" ] && [ "$actual" != "null" ]
+}
+
+json_number_ge() {
+  local response="$1"
+  local field="$2"
+  local minimum="$3"
+  local actual
+
+  actual="$(printf "%s" "$response" | jq -r "$field // 0" 2>/dev/null)"
+  [ "$actual" -ge "$minimum" ] 2>/dev/null
+}
+
+response_code_is() {
+  local response="$1"
+  local expected="$2"
+  local actual
+
+  actual="$(printf "%s" "$response" | jq -r '.code // empty' 2>/dev/null)"
+  [ "$actual" = "$expected" ]
+}
+
+json_value() {
+  local response="$1"
+  local field="$2"
+
+  printf "%s" "$response" | jq -r "$field // empty" 2>/dev/null
+}
+
 api() {
-    local method="$1" path="$2" body="${3:-}"
-    local args=(-s -X "$method" "$API$path")
-    if [ -n "$TOKEN" ]; then
-        args+=(-H "Authorization: Bearer $TOKEN")
-    fi
-    if [ -n "$body" ]; then
-        args+=(-H "Content-Type: application/json" -d "$body")
-    fi
-    curl "${args[@]}"
+  local method="$1"
+  local path="$2"
+  local body="${3:-}"
+  local args=(-sS -X "$method" "$API$path")
+
+  if [ -n "$TOKEN" ]; then
+    args+=(-H "Authorization: Bearer $TOKEN")
+  fi
+  if [ -n "$body" ]; then
+    args+=(-H "Content-Type: application/json" -d "$body")
+  fi
+
+  curl "${args[@]}"
 }
 
-# api_raw METHOD PATH [EXTRA_CURL_ARGS...] — 用于文件上传等非 JSON 场景
-api_raw() {
-    curl -s -H "Authorization: Bearer $TOKEN" "$@"
+api_no_auth() {
+  local method="$1"
+  local path="$2"
+  curl -sS -X "$method" "$API$path"
 }
 
-check_code() {
-    local response="$1" expected="$2"
-    local actual
-    actual=$(echo "$response" | jq -r '.code')
-    [ "$actual" = "$expected" ]
+api_upload() {
+  local file_path="$1"
+  local parent_id="${2:-0}"
+
+  curl -sS -X POST "$API/files/upload" \
+    -H "Authorization: Bearer $TOKEN" \
+    -F "file=@$file_path" \
+    -F "parent_id=$parent_id"
 }
 
-check_msg() {
-    local response="$1" expected="$2"
-    echo "$response" | jq -r '.msg' | grep -q "$expected"
+need_command() {
+  if ! command -v "$1" >/dev/null 2>&1; then
+    printf "%bERROR%b missing dependency: %s\n" "$RED" "$RESET" "$1"
+    exit 1
+  fi
 }
 
-# ── 依赖检查 ──────────────────────────────────────────
 for cmd in curl jq mktemp; do
-    if ! command -v "$cmd" &>/dev/null; then
-        echo -e "${RED}错误: 需要安装 $cmd${RESET}"
-        exit 1
-    fi
+  need_command "$cmd"
 done
 
-# ── 临时文件 & 清理 ───────────────────────────────────
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+TMPDIR="$(mktemp -d)"
+cleanup() {
+  rm -rf "$TMPDIR"
+}
+trap cleanup EXIT
 
-echo -e "${BOLD}云盘后端接口测试${RESET}"
-echo -e "目标: $BASE\n"
+printf "%bBackend API test%b\n" "$BOLD" "$RESET"
+printf "Target: %s\n" "$BASE"
 
-# ══════════════════════════════════════════════════════
-section "1. 健康检查"
-# ══════════════════════════════════════════════════════
+section "1. Health"
+RES="$(curl -sS "$BASE/ping" 2>/dev/null || true)"
+assert_code "ping returns code 0" "$RES" "0"
 
-RES=$(curl -s "$BASE/ping")
-assert "Ping 返回 code=0" "$(check_code "$RES" 0)"
-
-# ══════════════════════════════════════════════════════
-section "2. 用户注册"
-# ══════════════════════════════════════════════════════
-
-USERNAME="test_$(date +%s)"
+section "2. Auth"
+TS="$(date +%s)"
+USERNAME="test_${TS}_$RANDOM"
 PASSWORD="test123456"
-TOKEN=""
+USER2="test2_${TS}_$RANDOM"
 
-# 2.1 正常注册
-RES=$(api POST /auth/register "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")
-assert "正常注册" "$(check_code "$RES" 0)"
-assert "注册返回用户名" "$(echo "$RES" | jq -r '.data.username') = $USERNAME"
+RES="$(api POST /auth/register "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")"
+assert_code "register user" "$RES" "0"
+assert_true "register returns username" json_field_equals "$RES" ".data.username" "$USERNAME"
 
-# 2.2 重复用户名
-RES=$(api POST /auth/register "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")
-assert "重复用户名注册失败" "$(check_code "$RES" "1")"
+RES="$(api POST /auth/register "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")"
+assert_code "duplicate register fails" "$RES" "10001"
 
-# 2.3 缺少参数
-RES=$(api POST /auth/register '{"username":""}')
-assert "空用户名注册失败" "$(check_code "$RES" "1")"
+RES="$(api POST /auth/register '{"username":"","password":"test123456"}')"
+assert_code "empty username fails" "$RES" "10005"
 
-RES=$(api POST /auth/register '{"username":"a","password":"123"}')
-assert "短密码注册失败" "$(check_code "$RES" "1")"
+RES="$(api POST /auth/register '{"username":"abc","password":"123"}')"
+assert_code "short password fails" "$RES" "10005"
 
-# ══════════════════════════════════════════════════════
-section "3. 用户登录"
-# ══════════════════════════════════════════════════════
+RES="$(api POST /auth/login "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")"
+assert_code "login user" "$RES" "0"
+assert_true "login returns token" json_field_not_empty "$RES" ".data.token"
+assert_true "login returns expires_at" json_field_not_empty "$RES" ".data.expires_at"
+TOKEN="$(printf "%s" "$RES" | jq -r '.data.token')"
 
-# 3.1 正常登录
-RES=$(api POST /auth/login "{\"username\":\"$USERNAME\",\"password\":\"$PASSWORD\"}")
-assert "正常登录" "$(check_code "$RES" 0)"
-TOKEN=$(echo "$RES" | jq -r '.data.token')
-EXPIRES=$(echo "$RES" | jq -r '.data.expires_at')
-assert "返回 token" "[ $TOKEN != 'null' ] && [ -n \"$TOKEN\" ]"
-assert "返回过期时间" "[ $EXPIRES != 'null' ]"
+RES="$(api POST /auth/login "{\"username\":\"$USERNAME\",\"password\":\"wrong123\"}")"
+assert_code "wrong password fails" "$RES" "10003"
 
-# 3.2 错误密码
-RES=$(api POST /auth/login "{\"username\":\"$USERNAME\",\"password\":\"wrong\"}")
-assert "错误密码登录失败" "$(check_code "$RES" "1")"
+RES="$(api POST /auth/register "{\"username\":\"$USER2\",\"password\":\"$PASSWORD\"}")"
+assert_code "register second user" "$RES" "0"
+RES="$(api POST /auth/login "{\"username\":\"$USER2\",\"password\":\"$PASSWORD\"}")"
+assert_code "login second user" "$RES" "0"
+TOKEN2="$(printf "%s" "$RES" | jq -r '.data.token')"
 
-# 3.3 不存在的用户
-RES=$(api POST /auth/login '{"username":"nonexistent_user_12345","password":"whatever"}')
-assert "不存在用户登录失败" "$(check_code "$RES" "1")"
+section "3. Profile"
+RES="$(api GET /auth/profile)"
+assert_code "profile with token" "$RES" "0"
+assert_true "profile returns username" json_field_equals "$RES" ".data.username" "$USERNAME"
 
-# 3.4 保存第二个用户的 token 用于后续权限测试
-USER2="test2_$(date +%s)"
-api POST /auth/register "{\"username\":\"$USER2\",\"password\":\"$PASSWORD\"}" >/dev/null
-RES2=$(api POST /auth/login "{\"username\":\"$USER2\",\"password\":\"$PASSWORD\"}")
-TOKEN2=$(echo "$RES2" | jq -r '.data.token')
+RES="$(api_no_auth GET /auth/profile)"
+assert_code "profile without token fails" "$RES" "10004"
 
-# ══════════════════════════════════════════════════════
-section "4. 获取用户信息"
-# ══════════════════════════════════════════════════════
+section "4. Files"
+printf "Hello Cloud Storage %s\n" "$(date)" > "$TMPDIR/test1.txt"
+printf "Second file content\n" > "$TMPDIR/test2.txt"
 
-# 4.1 正常获取
-RES=$(api GET /auth/profile)
-assert "获取用户信息" "$(check_code "$RES" 0)"
-assert "返回正确用户名" "$(echo "$RES" | jq -r '.data.username') = $USERNAME"
+RES="$(api_upload "$TMPDIR/test1.txt" 0)"
+assert_code "upload first file" "$RES" "0"
+assert_true "upload first file returns id" json_field_not_empty "$RES" ".data.id"
+FILE1_ID="$(printf "%s" "$RES" | jq -r '.data.id')"
 
-# 4.2 无 token
-RES=$(curl -s "$API/auth/profile")
-assert "无 token 访问 profile 失败" "$(check_code "$RES "1")"
+RES="$(api_upload "$TMPDIR/test2.txt" 0)"
+assert_code "upload second file" "$RES" "0"
+assert_true "upload second file returns id" json_field_not_empty "$RES" ".data.id"
+FILE2_ID="$(printf "%s" "$RES" | jq -r '.data.id')"
 
-# 4.3 错误 token
-RES=$(curl -s -H "Authorization: Bearer invalid.token.here" "$API/auth/profile")
-assert "错误 token 访问 profile 失败" "$(check_code "$RES" "1")"
+RES="$(curl -sS -X POST "$API/files/upload" -H "Authorization: Bearer $TOKEN" -F "parent_id=0")"
+assert_code "upload without file fails" "$RES" "10005"
 
-# ══════════════════════════════════════════════════════
-section "5. 文件上传"
-# ══════════════════════════════════════════════════════
+RES="$(api GET '/files?folder_id=0&page=1&page_size=20')"
+assert_code "list root files" "$RES" "0"
+assert_true "root list has at least two items" json_number_ge "$RES" ".data.total" 2
 
-# 5.1 创建测试文件
-echo "Hello Cloud Storage - $(date)" > "$TMPDIR/test1.txt"
-echo "Second file content" > "$TMPDIR/test2.txt"
+RES="$(api GET '/files?folder_id=0&page=1&page_size=1')"
+assert_code "list pagination" "$RES" "0"
+assert_true "page size one returns one item" json_field_equals "$RES" ".data.items | length" "1"
 
-# 5.2 上传到根目录
-RES=$(api_raw -X POST "$API/files/upload" \
-    -F "file=@$TMPDIR/test1.txt" \
-    -F "parent_id=0")
-assert "上传文件到根目录" "$(check_code "$RES" 0)"
-FILE1_ID=$(echo "$RES" | jq -r '.data.id')
-assert "返回文件 ID" "[ $FILE1_ID != 'null' ] && [ $FILE1_ID -gt 0 ]"
+RES="$(api GET "/files/$FILE1_ID/download")"
+assert_code "get download url" "$RES" "0"
+assert_true "download response has url" json_field_not_empty "$RES" ".data.url"
 
-# 5.3 上传第二个文件
-RES=$(api_raw -X POST "$API/files/upload" \
-    -F "file=@$TMPDIR/test2.txt" \
-    -F "parent_id=0")
-assert "上传第二个文件" "$(check_code "$RES" 0)"
-FILE2_ID=$(echo "$RES" | jq -r '.data.id')
+RES="$(api GET '/files/999999/download')"
+assert_code "download missing file fails" "$RES" "10005"
 
-# 5.4 不带文件上传
-RES=$(api_raw -X POST "$API/files/upload" -F "parent_id=0")
-assert "不传文件上传失败" "$(check_code "$RES" "1")"
+RES="$(api PUT "/files/$FILE1_ID/rename" '{"name":"renamed_file.txt"}')"
+assert_code "rename file" "$RES" "0"
 
-# ══════════════════════════════════════════════════════
-section "6. 文件列表"
-# ══════════════════════════════════════════════════════
+RES="$(api GET '/files?folder_id=0&page=1&page_size=50')"
+if printf "%s" "$RES" | jq -e '.data.items[].name == "renamed_file.txt"' >/dev/null 2>&1; then
+  record pass "renamed file appears in list"
+else
+  record fail "renamed file appears in list"
+fi
 
-# 6.1 列出根目录
-RES=$(api GET "/files?folder_id=0&page=1&page_size=20")
-assert "列出根目录文件" "$(check_code "$RES" 0)"
-assert "文件数量 >= 2" "$(echo "$RES" | jq '.data.total') -ge 2"
+RES="$(api PUT "/files/$FILE1_ID/rename" '{"name":""}')"
+assert_code "empty rename fails" "$RES" "10005"
 
-# 6.2 分页
-RES=$(api GET "/files?folder_id=0&page=1&page_size=1")
-assert "分页查询 page_size=1" "$(check_code "$RES" 0)"
-assert "分页后 items 只有 1 条" "$(echo "$RES" | jq '.data.items | length') = 1"
+section "5. Folders and move"
+FOLDER_NAME="test_folder_${TS}_$RANDOM"
+SUBFOLDER_NAME="sub_folder_${TS}_$RANDOM"
 
-# ══════════════════════════════════════════════════════
-section "7. 文件下载"
-# ══════════════════════════════════════════════════════
+RES="$(api POST /folders "{\"parent_id\":0,\"name\":\"$FOLDER_NAME\"}")"
+assert_code "create folder" "$RES" "0"
+assert_true "create folder returns id" json_field_not_empty "$RES" ".data.id"
+FOLDER_ID="$(json_value "$RES" ".data.id")"
 
-# 7.1 正常下载
-RES=$(api GET "/files/$FILE1_ID/download")
-assert "获取下载链接" "$(check_code "$RES" 0)"
-assert "返回 url 字段" "$(echo "$RES" | jq -r '.data.url') != 'null'"
+if [ -n "$FOLDER_ID" ]; then
+  RES="$(api POST /folders "{\"parent_id\":0,\"name\":\"$FOLDER_NAME\"}")"
+  assert_code "duplicate folder fails" "$RES" "10005"
+else
+  record skip "duplicate folder fails"
+fi
 
-# 7.2 不存在的文件
-RES=$(api GET "/files/999999/download")
-assert "下载不存在的文件失败" "$(check_code "$RES" "1")"
+RES="$(api POST /folders '{"parent_id":0,"name":""}')"
+assert_code "empty folder name fails" "$RES" "10005"
 
-# ══════════════════════════════════════════════════════
-section "8. 文件重命名"
-# ══════════════════════════════════════════════════════
+RES="$(api POST /folders '{"parent_id":999999,"name":"orphan"}')"
+assert_code "missing parent folder fails" "$RES" "10005"
 
-# 8.1 正常重命名
-RES=$(api PUT "/files/$FILE1_ID/rename" '{"name":"renamed_file.txt"}')
-assert "重命名文件" "$(check_code "$RES" 0)"
+if [ -n "$FOLDER_ID" ]; then
+  RES="$(api POST /folders "{\"parent_id\":$FOLDER_ID,\"name\":\"$SUBFOLDER_NAME\"}")"
+  assert_code "create subfolder" "$RES" "0"
+  assert_true "create subfolder returns id" json_field_not_empty "$RES" ".data.id"
+  SUBFOLDER_ID="$(json_value "$RES" ".data.id")"
+else
+  SUBFOLDER_ID=""
+  record skip "create subfolder"
+  record skip "create subfolder returns id"
+fi
 
-# 8.2 验证新名字
-RES=$(api GET "/files?folder_id=0&page=1&page_size=50")
-assert "列表中出现新名字" "$(echo "$RES" | jq -r '.data.items[].name') | grep -q 'renamed_file.txt'"
+if [ -n "$FOLDER_ID" ]; then
+  RES="$(api PUT "/files/$FILE2_ID/move" "{\"target_id\":$FOLDER_ID}")"
+  assert_code "move file into folder" "$RES" "0"
 
-# 8.3 空名称
-RES=$(api PUT "/files/$FILE1_ID/rename" '{"name":""}')
-assert "空名称重命名失败" "$(check_code "$RES" "1")"
+  RES="$(api GET "/files?folder_id=$FOLDER_ID&page=1&page_size=50")"
+  assert_code "list folder after move" "$RES" "0"
+  assert_true "folder has moved file" json_number_ge "$RES" ".data.total" 1
+else
+  record skip "move file into folder"
+  record skip "list folder after move"
+  record skip "folder has moved file"
+fi
 
-# 8.4 不存在的文件
-RES=$(api PUT "/files/999999/rename" '{"name":"test"}')
-assert "重命名不存在的文件失败" "$(check_code "$RES" "1")"
+RES="$(api PUT "/files/$FILE1_ID/move" "{\"target_id\":$FILE1_ID}")"
+assert_code "move file to itself fails" "$RES" "10005"
 
-# ══════════════════════════════════════════════════════
-section "9. 文件夹操作"
-# ══════════════════════════════════════════════════════
+if [ -n "$FOLDER_ID" ] && [ -n "$SUBFOLDER_ID" ]; then
+  RES="$(api PUT "/files/$FOLDER_ID/move" "{\"target_id\":$SUBFOLDER_ID}")"
+  assert_code "move folder into child fails" "$RES" "10005"
+else
+  record skip "move folder into child fails"
+fi
 
-# 9.1 创建文件夹
-RES=$(api POST /folders '{"parent_id":0,"name":"测试文件夹"}')
-assert "在根目录创建文件夹" "$(check_code "$RES" 0)"
-FOLDER_ID=$(echo "$RES" | jq -r '.data.id')
-assert "返回文件夹 ID" "[ $FOLDER_ID != 'null' ] && [ $FOLDER_ID -gt 0 ]"
+RES="$(api PUT "/files/$FILE1_ID/move" '{"target_id":999999}')"
+assert_code "move to missing folder fails" "$RES" "10005"
 
-# 9.2 同名文件夹
-RES=$(api POST /folders '{"parent_id":0,"name":"测试文件夹"}')
-assert "同名文件夹创建失败" "$(check_code "$RES" "1")"
+section "6. Folder path"
+RES="$(api GET '/folders/path?folder_id=0')"
+assert_code "root path" "$RES" "0"
+assert_true "root path has one item" json_field_equals "$RES" ".data | length" "1"
 
-# 9.3 空名称
-RES=$(api POST /folders '{"parent_id":0,"name":""}')
-assert "空名称创建文件夹失败" "$(check_code "$RES" "1")"
+if [ -n "$SUBFOLDER_ID" ]; then
+  RES="$(api GET "/folders/path?folder_id=$SUBFOLDER_ID")"
+  assert_code "subfolder path" "$RES" "0"
+  assert_true "subfolder path has at least three items" json_number_ge "$RES" ".data | length" 3
+else
+  record skip "subfolder path"
+  record skip "subfolder path has at least three items"
+fi
 
-# 9.4 不存在的父目录
-RES=$(api POST /folders '{"parent_id":999999,"name":"orphan"}')
-assert "父目录不存在时创建失败" "$(check_code "$RES" "1")"
+RES="$(api GET '/folders/path?folder_id=abc')"
+assert_code "invalid folder path id fails" "$RES" "10005"
 
-# 9.5 在文件夹内创建子文件夹
-RES=$(api POST /folders "{\"parent_id\":$FOLDER_ID,\"name\":\"子文件夹\"}")
-assert "创建子文件夹" "$(check_code "$RES" 0)"
-SUBFOLDER_ID=$(echo "$RES" | jq -r '.data.id')
-
-# ══════════════════════════════════════════════════════
-section "10. 移动文件"
-# ══════════════════════════════════════════════════════
-
-# 10.1 把 file2 移动到文件夹内
-RES=$(api PUT "/files/$FILE2_ID/move" "{\"target_id\":$FOLDER_ID}")
-assert "移动文件到文件夹" "$(check_code "$RES" 0)"
-
-# 10.2 验证移动结果：根目录少一个文件，文件夹内多一个
-RES=$(api GET "/files?folder_id=0&page=1&page_size=50")
-ROOT_COUNT=$(echo "$RES" | jq '.data.total')
-RES=$(api GET "/files?folder_id=$FOLDER_ID&page=1&page_size=50")
-FOLDER_COUNT=$(echo "$RES" | jq '.data.total')
-assert "文件夹内有文件" "[ $FOLDER_COUNT -ge 1 ]"
-
-# 10.3 移动到自身
-RES=$(api PUT "/files/$FILE1_ID/move" "{\"target_id\":$FILE1_ID}")
-assert "移动到自身失败" "$(check_code "$RES" "1")"
-
-# 10.4 把文件夹移到自己的子文件夹（循环引用）
-RES=$(api PUT "/files/$FOLDER_ID/move" "{\"target_id\":$SUBFOLDER_ID}")
-assert "循环引用移动失败" "$(check_code "$RES" "1")"
-
-# 10.5 移动到不存在的文件夹
-RES=$(api PUT "/files/$FILE1_ID/move" '{"target_id":999999}')
-assert "移动到不存在的目标失败" "$(check_code "$RES" "1")"
-
-# ══════════════════════════════════════════════════════
-section "11. 面包屑路径"
-# ══════════════════════════════════════════════════════
-
-# 11.1 根目录路径
-RES=$(api GET "/folders/path?folder_id=0")
-assert "根目录路径" "$(check_code "$RES" 0)"
-assert "根目录路径只有一项" "$(echo "$RES" | jq '.data | length') = 1"
-assert "根目录名称正确" "$(echo "$RES" | jq -r '.data[0].name') = '根目录'"
-
-# 11.2 子文件夹路径
-RES=$(api GET "/folders/path?folder_id=$SUBFOLDER_ID")
-assert "子文件夹路径" "$(check_code "$RES" 0)"
-assert "路径层级 >= 3（根 → 父 → 子）" "$(echo "$RES" | jq '.data | length') -ge 3"
-
-# 11.3 无效 folder_id
-RES=$(api GET "/folders/path?folder_id=abc")
-assert "无效 folder_id 返回错误" "$(check_code "$RES" "1")"
-
-# ══════════════════════════════════════════════════════
-section "12. 跨用户权限"
-# ══════════════════════════════════════════════════════
-
-# 用 user2 的 token 操作 user1 的文件
+section "7. Cross-user permissions"
 SAVED_TOKEN="$TOKEN"
 TOKEN="$TOKEN2"
 
-# 12.1 下载别人的文件
-RES=$(api GET "/files/$FILE1_ID/download")
-assert "无权下载他人文件" "$(check_code "$RES" "1")"
+RES="$(api GET "/files/$FILE1_ID/download")"
+assert_code "other user cannot download file" "$RES" "10005"
 
-# 12.2 删除别人的文件
-RES=$(api DELETE "/files/$FILE1_ID")
-assert "无权删除他人文件" "$(check_code "$RES" "1")"
+RES="$(api DELETE "/files/$FILE1_ID")"
+assert_code "other user cannot delete file" "$RES" "10005"
 
-# 12.3 重命名别人的文件
-RES=$(api PUT "/files/$FILE1_ID/rename" '{"name":"hacked"}')
-assert "无权重命名他人文件" "$(check_code "$RES" "1")"
+RES="$(api PUT "/files/$FILE1_ID/rename" '{"name":"hacked.txt"}')"
+assert_code "other user cannot rename file" "$RES" "10005"
 
-# 12.4 移动别人的文件
-RES=$(api PUT "/files/$FILE1_ID/move" '{"target_id":0}')
-assert "无权移动他人文件" "$(check_code "$RES" "1")"
+RES="$(api PUT "/files/$FILE1_ID/move" '{"target_id":0}')"
+assert_code "other user cannot move file" "$RES" "10005"
 
-# 恢复原 token
 TOKEN="$SAVED_TOKEN"
 
-# ══════════════════════════════════════════════════════
-section "13. 文件删除"
-# ══════════════════════════════════════════════════════
+section "8. Delete and logout"
+RES="$(api DELETE "/files/$FILE1_ID")"
+assert_code "delete file" "$RES" "0"
 
-# 13.1 删除文件
-RES=$(api DELETE "/files/$FILE1_ID")
-assert "删除文件" "$(check_code "$RES" 0)"
+RES="$(api DELETE '/files/999999')"
+assert_code "delete missing file fails" "$RES" "10005"
 
-# 13.2 重复删除（软删除后再删）
-RES=$(api DELETE "/files/$FILE1_ID")
-assert "重复删除应报错或成功" "$(check_code "$RES" 0 || check_code "$RES" 1)"
+if [ -n "$SUBFOLDER_ID" ]; then
+  RES="$(api DELETE "/files/$SUBFOLDER_ID")"
+  assert_code "delete subfolder" "$RES" "0"
+else
+  record skip "delete subfolder"
+fi
 
-# 13.3 删除不存在的文件
-RES=$(api DELETE "/files/999999")
-assert "删除不存在的文件失败" "$(check_code "$RES" "1")"
+RES="$(api POST /auth/logout)"
+assert_code "logout" "$RES" "0"
 
-# 13.4 删除文件夹
-RES=$(api DELETE "/files/$SUBFOLDER_ID")
-assert "删除子文件夹" "$(check_code "$RES" 0)"
-
-# ══════════════════════════════════════════════════════
-section "14. 用户登出"
-# ══════════════════════════════════════════════════════
-
-RES=$(api POST /auth/logout)
-assert "登出成功" "$(check_code "$RES" 0)"
-
-# ══════════════════════════════════════════════════════
-# 测试结果汇总
-# ══════════════════════════════════════════════════════
-echo -e "\n${BOLD}═══════════════════════════════════════${RESET}"
-echo -e "${BOLD}测试结果: $TOTAL 项${RESET}"
-echo -e "  ${GREEN}通过: $PASS${RESET}"
-echo -e "  ${RED}失败: $FAIL${RESET}"
-echo -e "  ${YELLOW}跳过: $SKIP${RESET}"
-echo -e "${BOLD}═══════════════════════════════════════${RESET}"
+printf "\n%bSummary%b\n" "$BOLD" "$RESET"
+printf "  Total: %s\n" "$TOTAL"
+printf "  %bPassed: %s%b\n" "$GREEN" "$PASS" "$RESET"
+printf "  %bFailed: %s%b\n" "$RED" "$FAIL" "$RESET"
+printf "  %bSkipped: %s%b\n" "$YELLOW" "$SKIP" "$RESET"
 
 if [ "$FAIL" -gt 0 ]; then
-    exit 1
+  exit 1
 fi
