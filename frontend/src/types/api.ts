@@ -69,3 +69,15 @@ export interface FileUploadResponse {
 export interface DownloadResponse {
   url: string;
 }
+
+// 创建文件夹请求体
+export interface CreateFolderRequest {
+  parent_id: number;
+  name: string;
+}
+
+// 面包屑路径项
+export interface PathItem {
+  id: number;
+  name: string;
+}

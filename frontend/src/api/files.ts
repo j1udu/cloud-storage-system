@@ -1,5 +1,5 @@
 import { request } from './request';
-import type { DownloadResponse, FileListResponse, FileUploadResponse } from '@/types/api';
+import type { DownloadResponse, FileListResponse, FileUploadResponse, Matter, PathItem } from '@/types/api';
 
 export interface ListFilesParams {
   folder_id: number;
@@ -48,4 +48,17 @@ export function renameFile(id: number, name: string) {
     method: 'PUT',
     body: JSON.stringify({ name }),
   });
+}
+
+// 创建文件夹
+export function createFolder(parentId: number, name: string) {
+  return request<Matter>('/folders', {
+    method: 'POST',
+    body: JSON.stringify({ parent_id: parentId, name }),
+  });
+}
+
+// 获取面包屑路径
+export function getFolderPath(folderId: number) {
+  return request<PathItem[]>(`/folders/path?folder_id=${folderId}`);
 }

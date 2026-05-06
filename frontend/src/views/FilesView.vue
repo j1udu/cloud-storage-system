@@ -1,18 +1,10 @@
 <script setup lang="ts">
-import {
-  Delete,
-  Download,
-  Folder,
-  FolderOpened,
-  Refresh,
-  SwitchButton,
-  UploadFilled,
-} from '@element-plus/icons-vue';
+import { Delete, Download, Folder, FolderOpened, Refresh, SwitchButton, UploadFilled, FolderAdd, } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { deleteFile, getDownloadUrl, listFiles, renameFile, uploadFile } from '@/api/files';
+import { createFolder, deleteFile, getDownloadUrl, getFolderPath, listFiles, renameFile, uploadFile } from '@/api/files';
 import { showApiError } from '@/api/request';
 import { useAuthStore } from '@/stores/auth';
 import type { Matter } from '@/types/api';
@@ -32,6 +24,8 @@ const uploadInputRef = ref<HTMLInputElement>();
 const uploadLoading = ref(false);
 const renameVisible = ref(false);
 const renaming = ref(false);
+const createFolderVisible = ref(false);
+const creatingFolder = ref(false);
 const currentFile = ref<Matter | null>(null);
 const crumbs = ref<FolderCrumb[]>([{ id: 0, name: '全部文件' }]);
 const files = ref<Matter[]>([]);
@@ -41,6 +35,9 @@ const query = reactive({
   total: 0,
 });
 const renameForm = reactive({
+  name: '',
+});
+const createFolderForm = reactive({
   name: '',
 });
 
@@ -65,21 +62,67 @@ async function fetchFiles() {
   }
 }
 
-function openFolder(row: Matter) {
+async function openFolder(row: Matter) {
   // 双击或点击文件夹时进入下一级；普通文件没有目录行为。
   if (!row.dir) {
     return;
   }
   crumbs.value.push({ id: row.id, name: row.name });
   query.page = 1;
-  void fetchFiles();
+  await fetchFiles();
+  // 更新面包屑导航
+  await updateBreadcrumbs();
 }
 
-function jumpToCrumb(index: number) {
+async function jumpToCrumb(index: number) {
   // 点击面包屑会截断路径，回到历史目录层级。
   crumbs.value = crumbs.value.slice(0, index + 1);
   query.page = 1;
-  void fetchFiles();
+  await fetchFiles();
+  // 更新面包屑导航
+  await updateBreadcrumbs();
+}
+
+// 更新面包屑导航，从后端获取真实路径
+async function updateBreadcrumbs() {
+  try {
+    const pathItems = await getFolderPath(currentFolderId.value);
+    // 如果后端返回空数组，使用默认根目录
+    if (pathItems.length > 0) {
+      crumbs.value = pathItems.map(item => ({ id: item.id, name: item.name }));
+    } else {
+      crumbs.value = [{ id: 0, name: '全部文件' }];
+    }
+  } catch (error) {
+    // 如果获取路径失败，使用当前的面包屑
+    showApiError(error, '获取路径失败');
+  }
+}
+
+// 打开创建文件夹弹窗
+function openCreateFolder() {
+  createFolderForm.name = '';
+  createFolderVisible.value = true;
+}
+
+// 提交创建文件夹
+async function submitCreateFolder() {
+  if (!createFolderForm.name.trim()) {
+    ElMessage.warning('请输入文件夹名称');
+    return;
+  }
+
+  creatingFolder.value = true;
+  try {
+    await createFolder(currentFolderId.value, createFolderForm.name.trim());
+    ElMessage.success('文件夹创建成功');
+    createFolderVisible.value = false;
+    await fetchFiles();
+  } catch (error) {
+    showApiError(error, '创建文件夹失败');
+  } finally {
+    creatingFolder.value = false;
+  }
 }
 
 function pickFile() {
@@ -210,6 +253,7 @@ onMounted(async () => {
           <!-- 隐藏原生文件输入框，由上传按钮触发它。 -->
           <input ref="uploadInputRef" class="hidden-input" type="file" @change="handleUpload" />
           <el-button type="primary" :icon="UploadFilled" :loading="uploadLoading" @click="pickFile">上传文件</el-button>
+          <el-button :icon="FolderAdd" @click="openCreateFolder">新建文件夹</el-button>
           <el-button :icon="Refresh" @click="fetchFiles">刷新</el-button>
         </div>
       </div>
@@ -281,6 +325,15 @@ onMounted(async () => {
       <template #footer>
         <el-button @click="renameVisible = false">取消</el-button>
         <el-button type="primary" :loading="renaming" @click="submitRename">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 创建文件夹弹窗 -->
+    <el-dialog v-model="createFolderVisible" title="新建文件夹" width="420px">
+      <el-input v-model.trim="createFolderForm.name" placeholder="请输入文件夹名称" @keyup.enter="submitCreateFolder" />
+      <template #footer>
+        <el-button @click="createFolderVisible = false">取消</el-button>
+        <el-button type="primary" :loading="creatingFolder" @click="submitCreateFolder">保存</el-button>
       </template>
     </el-dialog>
   </main>
