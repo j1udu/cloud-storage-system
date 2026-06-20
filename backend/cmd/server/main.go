@@ -29,6 +29,9 @@ func main() {
 		log.Fatalf("初始化 MySQL 失败: %v", err)
 	}
 	defer db.Close()
+	if err := database.RunMigrations(db, "migrations"); err != nil {
+		log.Fatalf("运行数据库迁移失败: %v", err)
+	}
 	fmt.Println("MySQL 连接成功")
 
 	// 3. 连接 Redis
@@ -54,12 +57,18 @@ func main() {
 	userHandler := handler.NewUserHandler(userService)
 
 	fileRepo := repository.NewFileRepo(db)
-	fileService := service.NewFileService(fileRepo, objStorage)
+	fileService := service.NewFileService(fileRepo, objStorage, cfg.Quota.DefaultBytes)
 	fileHandler := handler.NewFileHandler(fileService)
+	quotaService := service.NewQuotaService(fileRepo, cfg.Quota.DefaultBytes)
+	quotaHandler := handler.NewQuotaHandler(quotaService)
+
+	shareRepo := repository.NewShareRepo(db)
+	shareService := service.NewShareService(shareRepo, fileRepo, objStorage)
+	shareHandler := handler.NewShareHandler(shareService)
 
 	// 5. 创建 Gin 引擎，注册路由
 	r := gin.Default()
-	router.Setup(r, userHandler, fileHandler, cfg.JWT.Secret)
+	router.Setup(r, userHandler, fileHandler, shareHandler, quotaHandler, cfg.JWT.Secret)
 
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{

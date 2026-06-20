@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/spf13/viper"
 )
@@ -15,6 +16,7 @@ type Config struct {
 	MinIO  MinIOConfig  `mapstructure:"minio"`
 	JWT    JWTConfig    `mapstructure:"jwt"`
 	Upload UploadConfig `mapstructure:"upload"`
+	Quota  QuotaConfig  `mapstructure:"quota"`
 }
 
 type ServerConfig struct {
@@ -60,6 +62,10 @@ type UploadConfig struct {
 	SessionExpireHour int   `mapstructure:"session_expire_hour"`
 }
 
+type QuotaConfig struct {
+	DefaultBytes int64 `mapstructure:"default_bytes"`
+}
+
 // Load 读取配置文件并返回 Config 对象
 func Load(configPath string) (*Config, error) {
 	v := viper.New()
@@ -91,6 +97,16 @@ func Load(configPath string) (*Config, error) {
 	}
 	if val := os.Getenv("CLOUD_JWT_SECRET"); val != "" {
 		cfg.JWT.Secret = val
+	}
+	if val := os.Getenv("CLOUD_QUOTA_DEFAULT_BYTES"); val != "" {
+		bytes, err := strconv.ParseInt(val, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid CLOUD_QUOTA_DEFAULT_BYTES: %w", err)
+		}
+		cfg.Quota.DefaultBytes = bytes
+	}
+	if cfg.Quota.DefaultBytes == 0 {
+		cfg.Quota.DefaultBytes = 10737418240
 	}
 
 	return &cfg, nil

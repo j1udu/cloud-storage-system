@@ -18,34 +18,41 @@ import (
 
 // FileService 文件业务逻辑
 type FileService struct {
-	repo    *repository.FileRepo
-	storage *storage.ObjectStorage
+	repo              *repository.FileRepo
+	storage           *storage.ObjectStorage
+	defaultQuotaBytes int64
 }
 
 // NewFileService 创建 FileService 实例
-func NewFileService(repo *repository.FileRepo, storage *storage.ObjectStorage) *FileService {
-	return &FileService{repo: repo, storage: storage}
+func NewFileService(repo *repository.FileRepo, storage *storage.ObjectStorage, defaultQuotaBytes int64) *FileService {
+	return &FileService{repo: repo, storage: storage, defaultQuotaBytes: defaultQuotaBytes}
 }
 
 // Upload 上传文件：存 MinIO + 写数据库
-func (s *FileService) Upload(ctx context.Context, userID uint64, parentID uint64, filename string, fileReader io.Reader, fileSize int64, contentType string) (*model.FileUploadResponse, error) {
+func (s *FileService) Upload(ctx context.Context, userID uint64, parentID uint64, filename string, fileReader io.ReadSeeker, fileSize int64, contentType string) (*model.FileUploadResponse, error) {
+	usedBytes, err := s.repo.SumUsedBytes(userID)
+	if err != nil {
+		return nil, err
+	}
+	if usedBytes+fileSize > s.defaultQuotaBytes {
+		return nil, fmt.Errorf("storage quota exceeded")
+	}
+
 	// 计算文件扩展名
 	ext := strings.ToLower(filepath.Ext(filename))
 
-	// 计算 MD5（需要同时读取内容算哈希和上传，所以用 TeeReader）
-	var buf strings.Builder
-	teeReader := io.TeeReader(fileReader, &buf)
-	md5Hash, err := hash.MD5FromReader(teeReader)
+	md5Hash, err := hash.MD5FromReader(fileReader)
 	if err != nil {
 		return nil, fmt.Errorf("计算文件哈希失败: %w", err)
+	}
+	if _, err := fileReader.Seek(0, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("重置上传文件读取位置失败: %w", err)
 	}
 
 	// storage_key: {user_id}/{md5}{ext}
 	storageKey := fmt.Sprintf("%d/%s%s", userID, md5Hash, ext)
 
-	// 把缓冲区的内容和剩余内容拼起来上传
-	fullReader := io.MultiReader(strings.NewReader(buf.String()), fileReader)
-	if err := s.storage.PutObject(ctx, storageKey, fullReader, fileSize, contentType); err != nil {
+	if err := s.storage.PutObject(ctx, storageKey, fileReader, fileSize, contentType); err != nil {
 		return nil, err
 	}
 
@@ -127,6 +134,36 @@ func (s *FileService) List(userID, parentID uint64, page, pageSize int) (*model.
 	}, nil
 }
 
+// ListRecycle lists files and folders in recycle bin.
+func (s *FileService) ListRecycle(userID uint64, page, pageSize int) (*model.FileListResponse, error) {
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+
+	total, err := s.repo.CountByStatus(userID, 2)
+	if err != nil {
+		return nil, err
+	}
+
+	items, err := s.repo.ListByStatus(userID, 2, offset, pageSize)
+	if err != nil {
+		return nil, err
+	}
+
+	if items == nil {
+		items = []model.Matter{}
+	}
+
+	return &model.FileListResponse{
+		Total: total,
+		Items: items,
+	}, nil
+}
+
 // Delete 软删除文件（移入回收站）
 func (s *FileService) Delete(userID, fileID uint64) error {
 	matter, err := s.repo.GetByID(fileID)
@@ -139,7 +176,92 @@ func (s *FileService) Delete(userID, fileID uint64) error {
 	if matter.Status != 1 {
 		return fmt.Errorf("文件已被删除")
 	}
-	return s.repo.UpdateStatus(fileID, 2)
+	return s.repo.MoveTreeToRecycle(userID, fileID)
+}
+
+// Restore restores a file or folder from recycle bin.
+func (s *FileService) Restore(userID, fileID uint64) error {
+	matter, err := s.repo.GetByID(fileID)
+	if err != nil {
+		return fmt.Errorf("file not found")
+	}
+	if matter.UserID != userID {
+		return fmt.Errorf("no permission")
+	}
+	if matter.Status != 2 {
+		return fmt.Errorf("file is not in recycle bin")
+	}
+
+	if matter.ParentID != 0 {
+		parent, err := s.repo.GetByID(matter.ParentID)
+		if err != nil {
+			return fmt.Errorf("parent folder not found")
+		}
+		if parent.UserID != userID {
+			return fmt.Errorf("no permission")
+		}
+		if !parent.Dir {
+			return fmt.Errorf("parent is not a folder")
+		}
+		if parent.Status != 1 {
+			return fmt.Errorf("parent folder is not active")
+		}
+	}
+
+	exists, err := s.repo.ExistsByName(userID, matter.ParentID, matter.Name)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("same name already exists")
+	}
+
+	return s.repo.RestoreTreeFromRecycle(userID, fileID)
+}
+
+// PermanentDelete marks a recycled file or folder as deleted.
+func (s *FileService) PermanentDelete(ctx context.Context, userID, fileID uint64) error {
+	matter, err := s.repo.GetByID(fileID)
+	if err != nil {
+		return fmt.Errorf("file not found")
+	}
+	if matter.UserID != userID {
+		return fmt.Errorf("no permission")
+	}
+	if matter.Status != 2 {
+		return fmt.Errorf("file is not in recycle bin")
+	}
+
+	items, err := s.repo.ListTreeByStatus(userID, fileID, 2)
+	if err != nil {
+		return err
+	}
+
+	deletedKeys := make(map[string]struct{})
+	for _, item := range items {
+		if item.Dir {
+			continue
+		}
+		if item.StorageKey == "" {
+			continue
+		}
+		if _, ok := deletedKeys[item.StorageKey]; ok {
+			continue
+		}
+		hasActiveRef, err := s.repo.ExistsActiveFileByStorageKey(item.StorageKey)
+		if err != nil {
+			return err
+		}
+		if hasActiveRef {
+			continue
+		}
+		if err := s.storage.RemoveObject(ctx, item.StorageKey); err != nil {
+			return err
+		}
+		deletedKeys[item.StorageKey] = struct{}{}
+	}
+
+	return s.repo.UpdateTreeStatus(userID, fileID, 2, 3)
 }
 
 // Rename 重命名
