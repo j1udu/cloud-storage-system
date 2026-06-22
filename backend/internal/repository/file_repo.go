@@ -114,6 +114,57 @@ func (r *FileRepo) SumUsedBytes(userID uint64) (int64, error) {
 	return usedBytes.Int64, nil
 }
 
+func (r *FileRepo) SumActiveTreeFileSize(userID, rootID uint64) (int64, error) {
+	pending := []uint64{rootID}
+	var total int64
+
+	for len(pending) > 0 {
+		currentID := pending[0]
+		pending = pending[1:]
+
+		var dir bool
+		var size int64
+		var status int
+		err := r.db.QueryRow(
+			"SELECT dir, size, status FROM matter WHERE id = ? AND user_id = ?",
+			currentID, userID,
+		).Scan(&dir, &size, &status)
+		if err != nil {
+			return 0, err
+		}
+		if status != 1 {
+			continue
+		}
+		if !dir {
+			total += size
+			continue
+		}
+
+		rows, err := r.db.Query(
+			"SELECT id FROM matter WHERE user_id = ? AND parent_id = ? AND status = 1",
+			userID, currentID,
+		)
+		if err != nil {
+			return 0, err
+		}
+		for rows.Next() {
+			var childID uint64
+			if err := rows.Scan(&childID); err != nil {
+				rows.Close()
+				return 0, err
+			}
+			pending = append(pending, childID)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		rows.Close()
+	}
+
+	return total, nil
+}
+
 func (r *FileRepo) ExistsActiveFileByStorageKey(storageKey string) (bool, error) {
 	var count int64
 	err := r.db.QueryRow(
@@ -270,6 +321,80 @@ func (r *FileRepo) GetParentID(id uint64) (uint64, error) {
 func (r *FileRepo) UpdateParent(id uint64, parentID uint64) error {
 	_, err := r.db.Exec("UPDATE matter SET parent_id = ? WHERE id = ?", parentID, id)
 	return err
+}
+
+func (r *FileRepo) CopyActiveTree(sourceUserID, sourceRootID, targetUserID, targetParentID uint64) (*model.Matter, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	savedRootID, err := r.copyActiveTreeTx(tx, sourceUserID, sourceRootID, targetUserID, targetParentID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return r.GetByID(savedRootID)
+}
+
+func (r *FileRepo) copyActiveTreeTx(tx *sql.Tx, sourceUserID, sourceID, targetUserID, targetParentID uint64) (uint64, error) {
+	var source model.Matter
+	err := tx.QueryRow(
+		"SELECT id, user_id, parent_id, name, dir, size, ext, mime_type, md5, storage_key, path, status, recycle_root_id, created_at, updated_at FROM matter WHERE id = ? AND user_id = ? AND status = 1",
+		sourceID, sourceUserID,
+	).Scan(&source.ID, &source.UserID, &source.ParentID, &source.Name, &source.Dir, &source.Size, &source.Ext, &source.MimeType, &source.MD5, &source.StorageKey, &source.Path, &source.Status, &source.RecycleRootID, &source.CreatedAt, &source.UpdatedAt)
+	if err != nil {
+		return 0, err
+	}
+
+	result, err := tx.Exec(
+		"INSERT INTO matter (user_id, parent_id, name, dir, size, ext, mime_type, md5, storage_key, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+		targetUserID, targetParentID, source.Name, source.Dir, source.Size, source.Ext, source.MimeType, source.MD5, source.StorageKey,
+	)
+	if err != nil {
+		return 0, err
+	}
+	savedID, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	if source.Dir {
+		rows, err := tx.Query(
+			"SELECT id FROM matter WHERE user_id = ? AND parent_id = ? AND status = 1 ORDER BY dir DESC, created_at ASC",
+			sourceUserID, source.ID,
+		)
+		if err != nil {
+			return 0, err
+		}
+		var childIDs []uint64
+		for rows.Next() {
+			var childID uint64
+			if err := rows.Scan(&childID); err != nil {
+				rows.Close()
+				return 0, err
+			}
+			childIDs = append(childIDs, childID)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		rows.Close()
+
+		for _, childID := range childIDs {
+			if _, err := r.copyActiveTreeTx(tx, sourceUserID, childID, targetUserID, uint64(savedID)); err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	return uint64(savedID), nil
 }
 
 type treeQueryer interface {

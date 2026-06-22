@@ -311,6 +311,70 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /shares/{token}/save:
+    post:
+      tags:
+        - file share
+      summary: Save shared matter to my drive
+      operationId: saveShareToMyDrive
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareSaveRequest'
+            example:
+              access_code: ""
+              parent_id: 0
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ShareSaveResponse'
+              example:
+                code: 0
+                msg: "success"
+                data:
+                  matter:
+                    id: 10
+                    user_id: 2
+                    parent_id: 0
+                    name: "report.pdf"
+                    dir: false
+                    size: 1048576
+                    ext: ".pdf"
+                    mime_type: "application/pdf"
+                    status: 1
+                    created_at: "2026-06-22T10:00:00Z"
+                    updated_at: "2026-06-22T10:00:00Z"
+        '400':
+          description: invalid token, invalid access_code, canceled share, expired share, inactive matter, target folder error, same name conflict, or quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /public/shares/{token}:
     get:
       tags:
@@ -1241,6 +1305,24 @@ components:
         access_code:
           type: string
           default: ""
+
+    ShareSaveRequest:
+      type: object
+      properties:
+        access_code:
+          type: string
+          default: ""
+        parent_id:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+
+    ShareSaveResponse:
+      type: object
+      properties:
+        matter:
+          $ref: '#/components/schemas/Matter'
 
     ShareListResponse:
       type: object

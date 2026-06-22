@@ -13,13 +13,14 @@ import (
 )
 
 type ShareService struct {
-	shareRepo *repository.ShareRepo
-	fileRepo  *repository.FileRepo
-	storage   *storage.ObjectStorage
+	shareRepo         *repository.ShareRepo
+	fileRepo          *repository.FileRepo
+	storage           *storage.ObjectStorage
+	defaultQuotaBytes int64
 }
 
-func NewShareService(shareRepo *repository.ShareRepo, fileRepo *repository.FileRepo, storage *storage.ObjectStorage) *ShareService {
-	return &ShareService{shareRepo: shareRepo, fileRepo: fileRepo, storage: storage}
+func NewShareService(shareRepo *repository.ShareRepo, fileRepo *repository.FileRepo, storage *storage.ObjectStorage, defaultQuotaBytes int64) *ShareService {
+	return &ShareService{shareRepo: shareRepo, fileRepo: fileRepo, storage: storage, defaultQuotaBytes: defaultQuotaBytes}
 }
 
 func (s *ShareService) Create(userID uint64, req *model.ShareCreateRequest) (*model.Share, error) {
@@ -132,6 +133,67 @@ func (s *ShareService) Download(ctx context.Context, token string, req *model.Sh
 	}
 
 	return s.storage.GetPresignedURL(ctx, matter.StorageKey, matter.Name, time.Hour)
+}
+
+func (s *ShareService) Save(userID uint64, token string, req *model.ShareSaveRequest) (*model.ShareSaveResponse, error) {
+	share, err := s.validShare(token)
+	if err != nil {
+		return nil, err
+	}
+	if share.AccessCode != "" && share.AccessCode != req.AccessCode {
+		return nil, fmt.Errorf("access_code invalid")
+	}
+
+	matter, err := s.fileRepo.GetByID(share.MatterID)
+	if err != nil {
+		return nil, fmt.Errorf("matter not found")
+	}
+	if matter.Status != 1 {
+		return nil, fmt.Errorf("matter is not active")
+	}
+
+	if req.ParentID != 0 {
+		parent, err := s.fileRepo.GetByID(req.ParentID)
+		if err != nil {
+			return nil, fmt.Errorf("parent folder not found")
+		}
+		if parent.UserID != userID {
+			return nil, fmt.Errorf("no permission")
+		}
+		if !parent.Dir {
+			return nil, fmt.Errorf("parent is not a folder")
+		}
+		if parent.Status != 1 {
+			return nil, fmt.Errorf("parent folder is not active")
+		}
+	}
+
+	exists, err := s.fileRepo.ExistsByName(userID, req.ParentID, matter.Name)
+	if err != nil {
+		return nil, err
+	}
+	if exists {
+		return nil, fmt.Errorf("same name already exists")
+	}
+
+	saveBytes, err := s.fileRepo.SumActiveTreeFileSize(matter.UserID, matter.ID)
+	if err != nil {
+		return nil, err
+	}
+	usedBytes, err := s.fileRepo.SumUsedBytes(userID)
+	if err != nil {
+		return nil, err
+	}
+	if usedBytes+saveBytes > s.defaultQuotaBytes {
+		return nil, fmt.Errorf("storage quota exceeded")
+	}
+
+	savedMatter, err := s.fileRepo.CopyActiveTree(matter.UserID, matter.ID, userID, req.ParentID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.ShareSaveResponse{Matter: *savedMatter}, nil
 }
 
 func (s *ShareService) validShare(token string) (*model.Share, error) {

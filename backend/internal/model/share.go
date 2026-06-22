@@ -24,11 +24,20 @@ type ShareDownloadRequest struct {
 	AccessCode string `json:"access_code"`
 }
 
+type ShareSaveRequest struct {
+	AccessCode string `json:"access_code"`
+	ParentID   uint64 `json:"parent_id"`
+}
+
 type ShareListResponse struct {
 	Total int64   `json:"total"`
 	Items []Share `json:"items"`
 }
 
 type PublicShareInfoResponse struct {
+	Matter Matter `json:"matter"`
+}
+
+type ShareSaveResponse struct {
 	Matter Matter `json:"matter"`
 }

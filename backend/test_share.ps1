@@ -146,6 +146,10 @@ try {
     Assert-Code "public share info is accessible without login" $publicInfo 0
     Assert-True "public share info returns matter" ($publicInfo.data.matter.id -eq $fileID)
 
+    $saveEmpty = Invoke-Api "POST" "/shares/$shareToken/save" @{ access_code = ""; parent_id = 0 } $tokenB
+    Assert-Code "user B saves empty access_code share to root" $saveEmpty 0
+    Assert-True "saved empty access_code share returns matter" ($saveEmpty.data.matter.id -gt 0)
+
     $download = Invoke-Api "POST" "/public/shares/$shareToken/download" @{ access_code = "" }
     Assert-Code "empty access_code public download succeeds" $download 0
     Assert-True "empty access_code download returns url" ($download.data.url -ne $null -and $download.data.url -ne "")
@@ -153,6 +157,18 @@ try {
     $shareCode = Invoke-Api "POST" "/shares" @{ matter_id = $fileID; access_code = "1234"; expire_hour = 24 } $tokenA
     Assert-Code "user A creates file share with access_code" $shareCode 0
     $shareCodeToken = [string]$shareCode.data.token
+
+    $saveWrong = Invoke-Api "POST" "/shares/$shareCodeToken/save" @{ access_code = "wrong"; parent_id = 0 } $tokenB
+    Assert-Code "wrong access_code save fails" $saveWrong 10005
+
+    $saveFolderName = "share_save_target_$suffix"
+    $saveFolder = Invoke-Api "POST" "/folders" @{ parent_id = 0; name = $saveFolderName } $tokenB
+    Assert-Code "user B creates save target folder" $saveFolder 0
+    $saveFolderID = [uint64]$saveFolder.data.id
+
+    $saveRight = Invoke-Api "POST" "/shares/$shareCodeToken/save" @{ access_code = "1234"; parent_id = $saveFolderID } $tokenB
+    Assert-Code "correct access_code save succeeds" $saveRight 0
+    Assert-True "correct access_code save returns matter" ($saveRight.data.matter.id -gt 0 -and $saveRight.data.matter.parent_id -eq $saveFolderID)
 
     $wrongDownload = Invoke-Api "POST" "/public/shares/$shareCodeToken/download" @{ access_code = "wrong" }
     Assert-Code "wrong access_code public download fails" $wrongDownload 10005
@@ -188,6 +204,10 @@ try {
     $neverExpireToken = [string]$neverExpire.data.token
     $neverExpireInfo = Invoke-Api "GET" "/public/shares/$neverExpireToken"
     Assert-Code "expire_hour zero public info succeeds" $neverExpireInfo 0
+
+    $saveFolderShare = Invoke-Api "POST" "/shares/$neverExpireToken/save" @{ access_code = ""; parent_id = 0 } $tokenB
+    Assert-Code "user B saves folder share" $saveFolderShare 0
+    Assert-True "saved folder share returns folder matter" ($saveFolderShare.data.matter.dir -eq $true)
 } finally {
     if (Test-Path -LiteralPath $tmp.FullName) {
         Remove-Item -LiteralPath $tmp.FullName -Force

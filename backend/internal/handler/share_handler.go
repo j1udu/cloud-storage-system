@@ -108,3 +108,27 @@ func (h *ShareHandler) PublicDownload(c *gin.Context) {
 
 	Success(c, gin.H{"url": url})
 }
+
+func (h *ShareHandler) Save(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		Fail(c, errcode.ErrInvalidToken, "invalid user id")
+		return
+	}
+
+	token := c.Param("token")
+
+	var req model.ShareSaveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		Fail(c, errcode.ErrParamInvalid, "invalid param")
+		return
+	}
+
+	resp, err := h.shareService.Save(userID.(uint64), token, &req)
+	if err != nil {
+		Fail(c, errcode.ErrParamInvalid, err.Error())
+		return
+	}
+
+	Success(c, resp)
+}

@@ -39,6 +39,7 @@ func Setup(r *gin.Engine, userHandler *handler.UserHandler, fileHandler *handler
 
 		authRequired.POST("/shares", shareHandler.Create)
 		authRequired.GET("/shares", shareHandler.List)
+		authRequired.POST("/shares/:token/save", shareHandler.Save)
 		authRequired.DELETE("/shares/:id", shareHandler.Cancel)
 
 		authRequired.GET("/storage/quota", quotaHandler.Get)
