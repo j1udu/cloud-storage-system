@@ -6,29 +6,26 @@ import (
 	"github.com/j1udu/cloud-storage-system/backend/internal/middleware"
 )
 
-// Setup 注册所有路由
-func Setup(r *gin.Engine, userHandler *handler.UserHandler, fileHandler *handler.FileHandler, jwtSecret string) {
-	// 全局中间件
+func Setup(r *gin.Engine, userHandler *handler.UserHandler, fileHandler *handler.FileHandler, shareHandler *handler.ShareHandler, quotaHandler *handler.QuotaHandler, jwtSecret string) {
 	r.Use(middleware.CORSMiddleware())
 
-	// API v1 路由组
 	v1 := r.Group("/api/v1")
 
-	// 用户认证路由（不需要登录）
 	auth := v1.Group("/auth")
 	{
 		auth.POST("/register", userHandler.Register)
 		auth.POST("/login", userHandler.Login)
 	}
 
-	// 需要登录的路由
+	v1.GET("/public/shares/:token", shareHandler.PublicInfo)
+	v1.POST("/public/shares/:token/download", shareHandler.PublicDownload)
+
 	authRequired := v1.Group("")
 	authRequired.Use(middleware.AuthMiddleware(jwtSecret))
 	{
 		authRequired.GET("/auth/profile", userHandler.GetProfile)
 		authRequired.POST("/auth/logout", userHandler.Logout)
 
-		// 文件管理
 		authRequired.POST("/files/upload", fileHandler.Upload)
 		authRequired.GET("/files", fileHandler.List)
 		authRequired.GET("/files/:id/download", fileHandler.Download)
@@ -36,7 +33,17 @@ func Setup(r *gin.Engine, userHandler *handler.UserHandler, fileHandler *handler
 		authRequired.PUT("/files/:id/rename", fileHandler.Rename)
 		authRequired.PUT("/files/:id/move", fileHandler.Move)
 
-		// 文件夹管理
+		authRequired.GET("/recycle", fileHandler.ListRecycle)
+		authRequired.PUT("/recycle/:id/restore", fileHandler.Restore)
+		authRequired.DELETE("/recycle/:id", fileHandler.PermanentDelete)
+
+		authRequired.POST("/shares", shareHandler.Create)
+		authRequired.GET("/shares", shareHandler.List)
+		authRequired.POST("/shares/:token/save", shareHandler.Save)
+		authRequired.DELETE("/shares/:id", shareHandler.Cancel)
+
+		authRequired.GET("/storage/quota", quotaHandler.Get)
+
 		authRequired.POST("/folders", fileHandler.CreateFolder)
 		authRequired.GET("/folders/path", fileHandler.GetPath)
 	}

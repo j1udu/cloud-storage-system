@@ -25,10 +25,12 @@ CREATE TABLE IF NOT EXISTS matter (
     storage_key  VARCHAR(512)     NOT NULL DEFAULT '' COMMENT 'MinIO对象键',
     path         VARCHAR(1024)    NOT NULL DEFAULT '' COMMENT '物化路径，如 /文档/项目/',
     status       TINYINT UNSIGNED NOT NULL DEFAULT 1 COMMENT '1=正常 2=回收站 3=已删除',
+    recycle_root_id BIGINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '本次进入回收站的根条目ID',
     created_at   DATETIME(3)      NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at   DATETIME(3)      NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     PRIMARY KEY (id),
     INDEX idx_user_parent (user_id, parent_id),
     INDEX idx_user_status (user_id, status),
+    INDEX idx_user_recycle_root (user_id, recycle_root_id),
     INDEX idx_md5 (md5)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文件/文件夹表';

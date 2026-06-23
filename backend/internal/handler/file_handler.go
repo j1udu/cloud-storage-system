@@ -9,17 +9,17 @@ import (
 	"github.com/j1udu/cloud-storage-system/backend/internal/service"
 )
 
-// FileHandler 文件接口
+// FileHandler handles file APIs.
 type FileHandler struct {
 	fileService *service.FileService
 }
 
-// NewFileHandler 创建 FileHandler 实例
+// NewFileHandler creates a FileHandler.
 func NewFileHandler(fileService *service.FileService) *FileHandler {
 	return &FileHandler{fileService: fileService}
 }
 
-// Upload 上传文件
+// Upload uploads a file.
 func (h *FileHandler) Upload(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -27,7 +27,6 @@ func (h *FileHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// 解析 multipart 表单
 	file, header, err := c.Request.FormFile("file")
 	if err != nil {
 		Fail(c, errcode.ErrParamInvalid, "请选择要上传的文件")
@@ -35,7 +34,6 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	}
 	defer file.Close()
 
-	// parent_id 可选，默认 0（根目录）
 	parentIDStr := c.DefaultPostForm("parent_id", "0")
 	parentID, _ := strconv.ParseUint(parentIDStr, 10, 64)
 
@@ -48,7 +46,7 @@ func (h *FileHandler) Upload(c *gin.Context) {
 	Success(c, resp)
 }
 
-// Download 获取下载链接
+// Download returns a download URL.
 func (h *FileHandler) Download(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -68,11 +66,10 @@ func (h *FileHandler) Download(c *gin.Context) {
 		return
 	}
 
-	// 返回预签名下载 URL
 	Success(c, gin.H{"url": url})
 }
 
-// List 文件列表
+// List lists active files and folders.
 func (h *FileHandler) List(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -95,7 +92,27 @@ func (h *FileHandler) List(c *gin.Context) {
 	Success(c, resp)
 }
 
-// Delete 删除文件（软删除）
+// ListRecycle lists recycle bin items.
+func (h *FileHandler) ListRecycle(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		Fail(c, errcode.ErrInvalidToken, "invalid user id")
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+
+	resp, err := h.fileService.ListRecycle(userID.(uint64), page, pageSize)
+	if err != nil {
+		Fail(c, errcode.ErrParamInvalid, err.Error())
+		return
+	}
+
+	Success(c, resp)
+}
+
+// Delete moves a file or folder to recycle bin.
 func (h *FileHandler) Delete(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -117,7 +134,51 @@ func (h *FileHandler) Delete(c *gin.Context) {
 	Success(c, nil)
 }
 
-// Rename 重命名
+// Restore restores a file or folder from recycle bin.
+func (h *FileHandler) Restore(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		Fail(c, errcode.ErrInvalidToken, "无效的用户ID")
+		return
+	}
+
+	fileID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		Fail(c, errcode.ErrParamInvalid, "无效的文件ID")
+		return
+	}
+
+	if err := h.fileService.Restore(userID.(uint64), fileID); err != nil {
+		Fail(c, errcode.ErrParamInvalid, err.Error())
+		return
+	}
+
+	Success(c, nil)
+}
+
+// PermanentDelete marks a recycled file or folder as deleted.
+func (h *FileHandler) PermanentDelete(c *gin.Context) {
+	userID, exists := c.Get("user_id")
+	if !exists {
+		Fail(c, errcode.ErrInvalidToken, "invalid user id")
+		return
+	}
+
+	fileID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil {
+		Fail(c, errcode.ErrParamInvalid, "invalid file id")
+		return
+	}
+
+	if err := h.fileService.PermanentDelete(c.Request.Context(), userID.(uint64), fileID); err != nil {
+		Fail(c, errcode.ErrParamInvalid, err.Error())
+		return
+	}
+
+	Success(c, nil)
+}
+
+// Rename renames a file or folder.
 func (h *FileHandler) Rename(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -147,7 +208,7 @@ func (h *FileHandler) Rename(c *gin.Context) {
 	Success(c, nil)
 }
 
-// CreateFolder 创建文件夹
+// CreateFolder creates a folder.
 func (h *FileHandler) CreateFolder(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -170,7 +231,7 @@ func (h *FileHandler) CreateFolder(c *gin.Context) {
 	Success(c, folder)
 }
 
-// GetPath 面包屑路径
+// GetPath returns folder path.
 func (h *FileHandler) GetPath(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
@@ -194,7 +255,7 @@ func (h *FileHandler) GetPath(c *gin.Context) {
 	Success(c, path)
 }
 
-// Move 移动文件/文件夹
+// Move moves a file or folder.
 func (h *FileHandler) Move(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {

@@ -6,17 +6,14 @@ import (
 	"github.com/j1udu/cloud-storage-system/backend/internal/model"
 )
 
-// FileRepo 文件数据访问
 type FileRepo struct {
 	db *sql.DB
 }
 
-// NewFileRepo 创建 FileRepo 实例
 func NewFileRepo(db *sql.DB) *FileRepo {
 	return &FileRepo{db: db}
 }
 
-// Create 插入一条文件/文件夹记录，回填自增ID
 func (r *FileRepo) Create(m *model.Matter) error {
 	result, err := r.db.Exec(
 		"INSERT INTO matter (user_id, parent_id, name, dir, size, ext, mime_type, md5, storage_key, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -30,20 +27,18 @@ func (r *FileRepo) Create(m *model.Matter) error {
 	return nil
 }
 
-// GetByID 按ID查询
 func (r *FileRepo) GetByID(id uint64) (*model.Matter, error) {
 	var m model.Matter
 	err := r.db.QueryRow(
-		"SELECT id, user_id, parent_id, name, dir, size, ext, mime_type, md5, storage_key, path, status, created_at, updated_at FROM matter WHERE id = ?",
+		"SELECT id, user_id, parent_id, name, dir, size, ext, mime_type, md5, storage_key, path, status, recycle_root_id, created_at, updated_at FROM matter WHERE id = ?",
 		id,
-	).Scan(&m.ID, &m.UserID, &m.ParentID, &m.Name, &m.Dir, &m.Size, &m.Ext, &m.MimeType, &m.MD5, &m.StorageKey, &m.Path, &m.Status, &m.CreatedAt, &m.UpdatedAt)
+	).Scan(&m.ID, &m.UserID, &m.ParentID, &m.Name, &m.Dir, &m.Size, &m.Ext, &m.MimeType, &m.MD5, &m.StorageKey, &m.Path, &m.Status, &m.RecycleRootID, &m.CreatedAt, &m.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
 	return &m, nil
 }
 
-// ListByParent 查询某用户某文件夹下的文件列表（分页）
 func (r *FileRepo) ListByParent(userID, parentID uint64, offset, limit int) ([]model.Matter, error) {
 	rows, err := r.db.Query(
 		"SELECT id, user_id, parent_id, name, dir, size, ext, mime_type, status, created_at, updated_at FROM matter WHERE user_id = ? AND parent_id = ? AND status = 1 ORDER BY dir DESC, created_at DESC LIMIT ? OFFSET ?",
@@ -65,7 +60,6 @@ func (r *FileRepo) ListByParent(userID, parentID uint64, offset, limit int) ([]m
 	return items, nil
 }
 
-// CountByParent 统计某用户某文件夹下的文件数量
 func (r *FileRepo) CountByParent(userID, parentID uint64) (int64, error) {
 	var count int64
 	err := r.db.QueryRow(
@@ -75,19 +69,240 @@ func (r *FileRepo) CountByParent(userID, parentID uint64) (int64, error) {
 	return count, err
 }
 
-// UpdateName 重命名
+func (r *FileRepo) ListByStatus(userID uint64, status int, offset, limit int) ([]model.Matter, error) {
+	rows, err := r.db.Query(
+		"SELECT id, user_id, parent_id, name, dir, size, ext, mime_type, status, created_at, updated_at FROM matter WHERE user_id = ? AND status = ? ORDER BY dir DESC, created_at DESC LIMIT ? OFFSET ?",
+		userID, status, limit, offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []model.Matter
+	for rows.Next() {
+		var m model.Matter
+		if err := rows.Scan(&m.ID, &m.UserID, &m.ParentID, &m.Name, &m.Dir, &m.Size, &m.Ext, &m.MimeType, &m.Status, &m.CreatedAt, &m.UpdatedAt); err != nil {
+			return nil, err
+		}
+		items = append(items, m)
+	}
+	return items, nil
+}
+
+func (r *FileRepo) CountByStatus(userID uint64, status int) (int64, error) {
+	var count int64
+	err := r.db.QueryRow(
+		"SELECT COUNT(*) FROM matter WHERE user_id = ? AND status = ?",
+		userID, status,
+	).Scan(&count)
+	return count, err
+}
+
+func (r *FileRepo) SumUsedBytes(userID uint64) (int64, error) {
+	var usedBytes sql.NullInt64
+	err := r.db.QueryRow(
+		"SELECT SUM(size) FROM matter WHERE user_id = ? AND dir = 0 AND status IN (1, 2)",
+		userID,
+	).Scan(&usedBytes)
+	if err != nil {
+		return 0, err
+	}
+	if !usedBytes.Valid {
+		return 0, nil
+	}
+	return usedBytes.Int64, nil
+}
+
+func (r *FileRepo) SumActiveTreeFileSize(userID, rootID uint64) (int64, error) {
+	pending := []uint64{rootID}
+	var total int64
+
+	for len(pending) > 0 {
+		currentID := pending[0]
+		pending = pending[1:]
+
+		var dir bool
+		var size int64
+		var status int
+		err := r.db.QueryRow(
+			"SELECT dir, size, status FROM matter WHERE id = ? AND user_id = ?",
+			currentID, userID,
+		).Scan(&dir, &size, &status)
+		if err != nil {
+			return 0, err
+		}
+		if status != 1 {
+			continue
+		}
+		if !dir {
+			total += size
+			continue
+		}
+
+		rows, err := r.db.Query(
+			"SELECT id FROM matter WHERE user_id = ? AND parent_id = ? AND status = 1",
+			userID, currentID,
+		)
+		if err != nil {
+			return 0, err
+		}
+		for rows.Next() {
+			var childID uint64
+			if err := rows.Scan(&childID); err != nil {
+				rows.Close()
+				return 0, err
+			}
+			pending = append(pending, childID)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		rows.Close()
+	}
+
+	return total, nil
+}
+
+func (r *FileRepo) ExistsActiveFileByStorageKey(storageKey string) (bool, error) {
+	var count int64
+	err := r.db.QueryRow(
+		"SELECT COUNT(*) FROM matter WHERE storage_key = ? AND dir = 0 AND status = 1",
+		storageKey,
+	).Scan(&count)
+	return count > 0, err
+}
+
 func (r *FileRepo) UpdateName(id uint64, name string) error {
 	_, err := r.db.Exec("UPDATE matter SET name = ? WHERE id = ?", name, id)
 	return err
 }
 
-// UpdateStatus 更改状态（软删除/恢复）
 func (r *FileRepo) UpdateStatus(id uint64, status int) error {
 	_, err := r.db.Exec("UPDATE matter SET status = ? WHERE id = ?", status, id)
 	return err
 }
 
-// ExistsByName 检查同一文件夹下是否存在同名文件/文件夹
+func (r *FileRepo) MoveTreeToRecycle(userID, rootID uint64) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	ids, err := r.listTreeIDs(tx, userID, rootID)
+	if err != nil {
+		return err
+	}
+
+	for _, id := range ids {
+		if _, err := tx.Exec(
+			"UPDATE matter SET status = 2, recycle_root_id = ? WHERE id = ? AND user_id = ? AND status = 1",
+			rootID, id, userID,
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (r *FileRepo) RestoreTreeFromRecycle(userID, rootID uint64) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	ids, err := r.listTreeIDs(tx, userID, rootID)
+	if err != nil {
+		return err
+	}
+
+	for _, id := range ids {
+		if _, err := tx.Exec(
+			"UPDATE matter SET status = 1, recycle_root_id = 0 WHERE id = ? AND user_id = ? AND status = 2 AND recycle_root_id = ?",
+			id, userID, rootID,
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (r *FileRepo) UpdateTreeStatus(userID, rootID uint64, fromStatus, toStatus int) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	ids, err := r.listTreeIDs(tx, userID, rootID)
+	if err != nil {
+		return err
+	}
+
+	for _, id := range ids {
+		if _, err := tx.Exec(
+			"UPDATE matter SET status = ?, recycle_root_id = 0 WHERE id = ? AND user_id = ? AND status = ?",
+			toStatus, id, userID, fromStatus,
+		); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
+func (r *FileRepo) ListTreeByStatus(userID, rootID uint64, status int) ([]model.Matter, error) {
+	pending := []uint64{rootID}
+	items := make([]model.Matter, 0)
+
+	for len(pending) > 0 {
+		currentID := pending[0]
+		pending = pending[1:]
+
+		var current model.Matter
+		err := r.db.QueryRow(
+			"SELECT id, user_id, parent_id, name, dir, size, ext, mime_type, md5, storage_key, path, status, recycle_root_id, created_at, updated_at FROM matter WHERE id = ? AND user_id = ?",
+			currentID, userID,
+		).Scan(&current.ID, &current.UserID, &current.ParentID, &current.Name, &current.Dir, &current.Size, &current.Ext, &current.MimeType, &current.MD5, &current.StorageKey, &current.Path, &current.Status, &current.RecycleRootID, &current.CreatedAt, &current.UpdatedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		if current.Status == status {
+			items = append(items, current)
+		}
+
+		rows, err := r.db.Query(
+			"SELECT id FROM matter WHERE user_id = ? AND parent_id = ?",
+			userID, currentID,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		for rows.Next() {
+			var childID uint64
+			if err := rows.Scan(&childID); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			pending = append(pending, childID)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	return items, nil
+}
+
 func (r *FileRepo) ExistsByName(userID, parentID uint64, name string) (bool, error) {
 	var count int64
 	err := r.db.QueryRow(
@@ -97,15 +312,126 @@ func (r *FileRepo) ExistsByName(userID, parentID uint64, name string) (bool, err
 	return count > 0, err
 }
 
-// GetParentID 查询某个文件/文件夹的 parent_id
 func (r *FileRepo) GetParentID(id uint64) (uint64, error) {
 	var parentID uint64
 	err := r.db.QueryRow("SELECT parent_id FROM matter WHERE id = ?", id).Scan(&parentID)
 	return parentID, err
 }
 
-// UpdateParent 移动文件/文件夹到新的父文件夹
 func (r *FileRepo) UpdateParent(id uint64, parentID uint64) error {
 	_, err := r.db.Exec("UPDATE matter SET parent_id = ? WHERE id = ?", parentID, id)
 	return err
+}
+
+func (r *FileRepo) CopyActiveTree(sourceUserID, sourceRootID, targetUserID, targetParentID uint64) (*model.Matter, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	savedRootID, err := r.copyActiveTreeTx(tx, sourceUserID, sourceRootID, targetUserID, targetParentID)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	return r.GetByID(savedRootID)
+}
+
+func (r *FileRepo) copyActiveTreeTx(tx *sql.Tx, sourceUserID, sourceID, targetUserID, targetParentID uint64) (uint64, error) {
+	var source model.Matter
+	err := tx.QueryRow(
+		"SELECT id, user_id, parent_id, name, dir, size, ext, mime_type, md5, storage_key, path, status, recycle_root_id, created_at, updated_at FROM matter WHERE id = ? AND user_id = ? AND status = 1",
+		sourceID, sourceUserID,
+	).Scan(&source.ID, &source.UserID, &source.ParentID, &source.Name, &source.Dir, &source.Size, &source.Ext, &source.MimeType, &source.MD5, &source.StorageKey, &source.Path, &source.Status, &source.RecycleRootID, &source.CreatedAt, &source.UpdatedAt)
+	if err != nil {
+		return 0, err
+	}
+
+	result, err := tx.Exec(
+		"INSERT INTO matter (user_id, parent_id, name, dir, size, ext, mime_type, md5, storage_key, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+		targetUserID, targetParentID, source.Name, source.Dir, source.Size, source.Ext, source.MimeType, source.MD5, source.StorageKey,
+	)
+	if err != nil {
+		return 0, err
+	}
+	savedID, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+
+	if source.Dir {
+		rows, err := tx.Query(
+			"SELECT id FROM matter WHERE user_id = ? AND parent_id = ? AND status = 1 ORDER BY dir DESC, created_at ASC",
+			sourceUserID, source.ID,
+		)
+		if err != nil {
+			return 0, err
+		}
+		var childIDs []uint64
+		for rows.Next() {
+			var childID uint64
+			if err := rows.Scan(&childID); err != nil {
+				rows.Close()
+				return 0, err
+			}
+			childIDs = append(childIDs, childID)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		rows.Close()
+
+		for _, childID := range childIDs {
+			if _, err := r.copyActiveTreeTx(tx, sourceUserID, childID, targetUserID, uint64(savedID)); err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	return uint64(savedID), nil
+}
+
+type treeQueryer interface {
+	Query(query string, args ...interface{}) (*sql.Rows, error)
+}
+
+func (r *FileRepo) listTreeIDs(q treeQueryer, userID, rootID uint64) ([]uint64, error) {
+	pending := []uint64{rootID}
+	ids := make([]uint64, 0, 1)
+
+	for len(pending) > 0 {
+		currentID := pending[0]
+		pending = pending[1:]
+		ids = append(ids, currentID)
+
+		rows, err := q.Query(
+			"SELECT id FROM matter WHERE user_id = ? AND parent_id = ?",
+			userID, currentID,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		for rows.Next() {
+			var childID uint64
+			if err := rows.Scan(&childID); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			pending = append(pending, childID)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		rows.Close()
+	}
+
+	return ids, nil
 }

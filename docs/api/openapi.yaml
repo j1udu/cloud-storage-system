@@ -178,6 +178,316 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /shares:
+    post:
+      tags:
+        - file share
+      summary: Create share
+      operationId: createShare
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareCreateRequest'
+            example:
+              matter_id: 123
+              access_code: ""
+              expire_hour: 24
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Share'
+              example:
+                code: 0
+                msg: "success"
+                data:
+                  id: 1
+                  user_id: 1
+                  matter_id: 123
+                  token: "share-token"
+                  access_code: ""
+                  expire_at: "2026-06-09T10:00:00Z"
+                  status: 1
+                  created_at: "2026-06-08T10:00:00Z"
+                  updated_at: "2026-06-08T10:00:00Z"
+        '400':
+          description: invalid param
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      tags:
+        - file share
+      summary: List my shares
+      operationId: listShares
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ShareListResponse'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /shares/{id}:
+    delete:
+      tags:
+        - file share
+      summary: Cancel share
+      operationId: cancelShare
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+              example:
+                code: 0
+                msg: "success"
+                data: null
+        '400':
+          description: invalid param
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /shares/{token}/save:
+    post:
+      tags:
+        - file share
+      summary: Save shared matter to my drive
+      operationId: saveShareToMyDrive
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareSaveRequest'
+            example:
+              access_code: ""
+              parent_id: 0
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ShareSaveResponse'
+              example:
+                code: 0
+                msg: "success"
+                data:
+                  matter:
+                    id: 10
+                    user_id: 2
+                    parent_id: 0
+                    name: "report.pdf"
+                    dir: false
+                    size: 1048576
+                    ext: ".pdf"
+                    mime_type: "application/pdf"
+                    status: 1
+                    created_at: "2026-06-22T10:00:00Z"
+                    updated_at: "2026-06-22T10:00:00Z"
+        '400':
+          description: invalid token, invalid access_code, canceled share, expired share, inactive matter, target folder error, same name conflict, or quota exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /public/shares/{token}:
+    get:
+      tags:
+        - file share
+      summary: Get public share info
+      operationId: getPublicShareInfo
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PublicShareInfoResponse'
+        '400':
+          description: invalid token, canceled share, or expired share
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /public/shares/{token}/download:
+    post:
+      tags:
+        - file share
+      summary: Get public share download URL
+      operationId: downloadPublicShare
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ShareDownloadRequest'
+            example:
+              access_code: ""
+      responses:
+        '200':
+          description: success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          url:
+                            type: string
+              example:
+                code: 0
+                msg: "success"
+                data:
+                  url: "http://localhost:9000/cloud-storage/1/file.txt?X-Amz-Algorithm=..."
+        '400':
+          description: invalid token, invalid access_code, canceled share, expired share, or folder target
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /storage/quota:
+    get:
+      tags:
+        - 文件管理
+      summary: 获取容量配额和用量
+      description: 返回当前用户 status IN (1, 2) 的文件容量用量、配额和可用容量
+      operationId: getStorageQuota
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 获取成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/StorageQuotaResponse'
+              example:
+                code: 0
+                msg: "success"
+                data:
+                  used_bytes: 123
+                  quota_bytes: 10737418240
+                  available_bytes: 10737418117
+        '401':
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /files/upload:
     post:
       tags:
@@ -310,6 +620,149 @@ paths:
                       status: 1
                       created_at: "2026-04-20T10:01:00Z"
                       updated_at: "2026-04-20T10:01:00Z"
+        '401':
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /recycle:
+    get:
+      tags:
+        - 文件管理
+      summary: 回收站列表
+      description: 查询当前用户 status=2 的文件和文件夹，分页参数沿用文件列表接口
+      operationId: listRecycle
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+          description: 页码
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
+          description: 每页数量
+      responses:
+        '200':
+          description: 查询成功
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/BaseResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/FileListResponse'
+              example:
+                code: 0
+                msg: "success"
+                data:
+                  total: 1
+                  items:
+                    - id: 1
+                      user_id: 1
+                      parent_id: 0
+                      name: "report.pdf"
+                      dir: false
+                      size: 1048576
+                      ext: ".pdf"
+                      mime_type: "application/pdf"
+                      status: 2
+                      created_at: "2026-04-20T10:01:00Z"
+                      updated_at: "2026-04-20T10:01:00Z"
+        '401':
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /recycle/{id}/restore:
+    put:
+      tags:
+        - 文件管理
+      summary: 恢复回收站条目
+      description: 将回收站中的文件或文件夹恢复为 status=1；恢复文件夹时只恢复同一次随该文件夹进入回收站的子孙条目
+      operationId: restoreRecycleItem
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+          description: 文件或文件夹 ID
+      responses:
+        '200':
+          description: 恢复成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+              example:
+                code: 0
+                msg: "success"
+                data: null
+        '400':
+          description: 文件不存在、无权操作、状态不正确、父目录状态不正确或同名冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: 未认证
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /recycle/{id}:
+    delete:
+      tags:
+        - 文件管理
+      summary: 彻底删除回收站条目
+      description: 状态改为已删除并删除对象存储中的文件内容
+      operationId: permanentDeleteRecycleItem
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+          description: 文件或文件夹 ID
+      responses:
+        '200':
+          description: 彻底删除成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaseResponse'
+              example:
+                code: 0
+                msg: "success"
+                data: null
+        '400':
+          description: 文件不存在、无权操作或状态不正确
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '401':
           description: 未认证
           content:
@@ -764,6 +1217,25 @@ components:
           description: 扩展名
           example: ".pdf"
 
+    StorageQuotaResponse:
+      type: object
+      properties:
+        used_bytes:
+          type: integer
+          format: int64
+          description: 当前用户 status IN (1, 2) 的文件总大小
+          example: 123
+        quota_bytes:
+          type: integer
+          format: int64
+          description: 当前用户容量配额
+          example: 10737418240
+        available_bytes:
+          type: integer
+          format: int64
+          description: 当前用户剩余容量
+          example: 10737418117
+
     FileListResponse:
       type: object
       properties:
@@ -776,6 +1248,98 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Matter'
+
+    Share:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+          minimum: 0
+        user_id:
+          type: integer
+          format: int64
+          minimum: 0
+        matter_id:
+          type: integer
+          format: int64
+          minimum: 0
+        token:
+          type: string
+        access_code:
+          type: string
+        expire_at:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          type: integer
+          description: "1=valid 2=canceled"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ShareCreateRequest:
+      type: object
+      required:
+        - matter_id
+      properties:
+        matter_id:
+          type: integer
+          format: int64
+          minimum: 0
+        access_code:
+          type: string
+          default: ""
+        expire_hour:
+          type: integer
+          description: "0 means never expire"
+          default: 0
+
+    ShareDownloadRequest:
+      type: object
+      properties:
+        access_code:
+          type: string
+          default: ""
+
+    ShareSaveRequest:
+      type: object
+      properties:
+        access_code:
+          type: string
+          default: ""
+        parent_id:
+          type: integer
+          format: int64
+          minimum: 0
+          default: 0
+
+    ShareSaveResponse:
+      type: object
+      properties:
+        matter:
+          $ref: '#/components/schemas/Matter'
+
+    ShareListResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+          format: int64
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Share'
+
+    PublicShareInfoResponse:
+      type: object
+      properties:
+        matter:
+          $ref: '#/components/schemas/Matter'
 
     Matter:
       type: object

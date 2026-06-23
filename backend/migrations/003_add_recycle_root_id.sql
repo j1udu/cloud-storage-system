@@ -1,0 +1,2 @@
+-- Handled by backend/internal/database/migrations.go.
+-- The Go migration checks information_schema before adding recycle_root_id.

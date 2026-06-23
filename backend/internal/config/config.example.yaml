@@ -34,3 +34,6 @@ upload:
   chunk_size_bytes: 5242880
   max_file_size_bytes: 53687091200
   session_expire_hour: 24
+
+quota:
+  default_bytes: 10737418240

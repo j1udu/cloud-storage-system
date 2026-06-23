@@ -4,6 +4,13 @@
 #   bash test.sh [BASE_URL]
 # Example:
 #   bash test.sh http://localhost:8080
+# Share tests:
+#   powershell -ExecutionPolicy Bypass -File test_share.ps1 [BASE_URL]
+# Recycle tests:
+#   powershell -ExecutionPolicy Bypass -File test_recycle.ps1 [BASE_URL]
+# Quota tests:
+#   start backend with CLOUD_QUOTA_DEFAULT_BYTES=4096
+#   powershell -ExecutionPolicy Bypass -File test_quota.ps1 [BASE_URL] 4096
 
 set -u
 
@@ -115,6 +122,20 @@ json_value() {
   local field="$2"
 
   printf "%s" "$response" | jq -r "$field // empty" 2>/dev/null
+}
+
+json_items_has_id() {
+  local response="$1"
+  local id="$2"
+
+  printf "%s" "$response" | jq -e --argjson id "$id" '.data.items[]? | select(.id == $id)' >/dev/null 2>&1
+}
+
+json_items_missing_id() {
+  local response="$1"
+  local id="$2"
+
+  ! json_items_has_id "$response" "$id"
 }
 
 api() {
@@ -358,14 +379,60 @@ section "8. Delete and logout"
 RES="$(api DELETE "/files/$FILE1_ID")"
 assert_code "delete file" "$RES" "0"
 
+RES="$(api GET '/files?folder_id=0&page=1&page_size=50')"
+assert_code "list root after delete" "$RES" "0"
+assert_true "deleted file hidden from normal list" json_items_missing_id "$RES" "$FILE1_ID"
+
+RES="$(api GET '/recycle?page=1&page_size=50')"
+assert_code "list recycle after delete" "$RES" "0"
+assert_true "deleted file appears in recycle" json_items_has_id "$RES" "$FILE1_ID"
+
+RES="$(api PUT "/recycle/$FILE1_ID/restore")"
+assert_code "restore file from recycle" "$RES" "0"
+
+RES="$(api GET '/files?folder_id=0&page=1&page_size=50')"
+assert_code "list root after restore" "$RES" "0"
+assert_true "restored file appears in normal list" json_items_has_id "$RES" "$FILE1_ID"
+
+RES="$(api DELETE "/files/$FILE1_ID")"
+assert_code "delete file before permanent delete" "$RES" "0"
+
+RES="$(api DELETE "/recycle/$FILE1_ID")"
+assert_code "permanent delete file" "$RES" "0"
+
+RES="$(api GET '/recycle?page=1&page_size=50')"
+assert_code "list recycle after permanent delete" "$RES" "0"
+assert_true "permanently deleted file hidden from recycle" json_items_missing_id "$RES" "$FILE1_ID"
+
+RES="$(api PUT "/recycle/$FILE1_ID/restore")"
+assert_code "restore permanently deleted file fails" "$RES" "10005"
+
 RES="$(api DELETE '/files/999999')"
 assert_code "delete missing file fails" "$RES" "10005"
 
-if [ -n "$SUBFOLDER_ID" ]; then
-  RES="$(api DELETE "/files/$SUBFOLDER_ID")"
-  assert_code "delete subfolder" "$RES" "0"
+if [ -n "$FOLDER_ID" ] && [ -n "$SUBFOLDER_ID" ]; then
+  RES="$(api DELETE "/files/$FOLDER_ID")"
+  assert_code "delete folder recursively" "$RES" "0"
+
+  RES="$(api GET "/files?folder_id=$FOLDER_ID&page=1&page_size=50")"
+  assert_code "list deleted folder normal children" "$RES" "0"
+  assert_true "deleted folder child file hidden from normal list" json_items_missing_id "$RES" "$FILE2_ID"
+  assert_true "deleted folder child folder hidden from normal list" json_items_missing_id "$RES" "$SUBFOLDER_ID"
+
+  RES="$(api GET '/recycle?page=1&page_size=100')"
+  assert_code "list recycle after folder delete" "$RES" "0"
+  assert_true "deleted folder appears in recycle" json_items_has_id "$RES" "$FOLDER_ID"
+  assert_true "deleted folder child file appears in recycle" json_items_has_id "$RES" "$FILE2_ID"
+  assert_true "deleted folder child folder appears in recycle" json_items_has_id "$RES" "$SUBFOLDER_ID"
 else
-  record skip "delete subfolder"
+  record skip "delete folder recursively"
+  record skip "list deleted folder normal children"
+  record skip "deleted folder child file hidden from normal list"
+  record skip "deleted folder child folder hidden from normal list"
+  record skip "list recycle after folder delete"
+  record skip "deleted folder appears in recycle"
+  record skip "deleted folder child file appears in recycle"
+  record skip "deleted folder child folder appears in recycle"
 fi
 
 RES="$(api POST /auth/logout)"
