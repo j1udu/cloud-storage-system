@@ -81,3 +81,46 @@ export interface PathItem {
   id: number;
   name: string;
 }
+
+// 移动文件请求体
+export interface MoveRequest {
+  target_id: number;
+}
+
+// 存储容量
+export interface StorageQuota {
+  used_bytes: number;
+  quota_bytes: number;
+  available_bytes: number;
+}
+
+// 分享
+export interface Share {
+  id: number;
+  user_id: number;
+  matter_id: number;
+  matter_name: string;
+  token: string;
+  access_code: string;
+  expire_at: string | null;
+  status: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ShareCreateRequest {
+  matter_id: number;
+  access_code?: string;
+  expire_hour?: number;
+}
+
+export interface ShareListResponse {
+  total: number;
+  items: Share[];
+}
+
+export interface PublicShareInfo {
+  matter: Matter;
+  sharer_name: string;
+  has_code: boolean;
+}

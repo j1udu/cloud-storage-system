@@ -215,6 +215,7 @@ paths:
                   id: 1
                   user_id: 1
                   matter_id: 123
+                  matter_name: "test-file"
                   token: "share-token"
                   access_code: ""
                   expire_at: "2026-06-09T10:00:00Z"
@@ -1340,6 +1341,12 @@ components:
       properties:
         matter:
           $ref: '#/components/schemas/Matter'
+      sharer_name:
+        type: string
+        description: 分享者用户名（优先显示昵称）
+      has_code:
+        type: boolean
+        description: 是否需要提取码        
 
     Matter:
       type: object

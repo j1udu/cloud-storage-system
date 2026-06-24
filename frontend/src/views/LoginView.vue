@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Lock, User } from '@element-plus/icons-vue';
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus';
-import { computed, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { showApiError } from '@/api/request';
@@ -11,20 +11,45 @@ const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 
-// 登录和注册共用一套表单状态，通过 mode 控制当前提交行为。
 const formRef = ref<FormInstance>();
 const mode = ref<'login' | 'register'>('login');
 const loading = ref(false);
+const passwordFocused = ref(false);
 const form = reactive({
   username: '',
   password: '',
   nickname: '',
 });
 
+// 鼠标跟随眼睛
+const cloudRef = ref<SVGSVGElement | null>(null);
+const eyeOffset = reactive({ lx: 0, ly: 0, rx: 0, ry: 0 });
+
+function onMouseMove(e: MouseEvent) {
+  if (!cloudRef.value) return;
+  const rect = cloudRef.value.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const dx = e.clientX - cx;
+  const dy = e.clientY - cy;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const maxShift = 4;
+  const shift = Math.min(dist / 80, 1) * maxShift;
+  const angle = Math.atan2(dy, dx);
+  const ox = Math.cos(angle) * shift;
+  const oy = Math.sin(angle) * shift;
+  eyeOffset.lx = ox;
+  eyeOffset.ly = oy;
+  eyeOffset.rx = ox;
+  eyeOffset.ry = oy;
+}
+
+onMounted(() => window.addEventListener('mousemove', onMouseMove));
+onBeforeUnmount(() => window.removeEventListener('mousemove', onMouseMove));
+
 const title = computed(() => (mode.value === 'login' ? '登录云盘' : '创建账号'));
 const submitText = computed(() => (mode.value === 'login' ? '登录' : '注册'));
 
-// Element Plus 表单校验规则，先在前端拦截明显不合法的输入。
 const rules: FormRules = {
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },
@@ -38,13 +63,11 @@ const rules: FormRules = {
 };
 
 function toggleMode() {
-  // 切换登录/注册时清掉上一种模式留下的校验提示。
   mode.value = mode.value === 'login' ? 'register' : 'login';
   formRef.value?.clearValidate();
 }
 
 async function submit() {
-  // validate 返回失败时会抛错，这里统一转换成 false，避免进入提交流程。
   const valid = await formRef.value?.validate().catch(() => false);
   if (!valid) {
     return;
@@ -58,7 +81,6 @@ async function submit() {
         password: form.password,
       });
       ElMessage.success('登录成功');
-      // 如果是从受保护页面跳来的，登录后回到原页面；否则进入文件页。
       await router.replace(String(route.query.redirect || '/files'));
       return;
     }
@@ -69,7 +91,6 @@ async function submit() {
       nickname: form.nickname || undefined,
     });
     ElMessage.success('注册成功，请登录');
-    // 当前产品注册后不自动登录，让用户回到登录模式重新提交。
     mode.value = 'login';
     form.password = '';
   } catch (error) {
@@ -82,17 +103,58 @@ async function submit() {
 
 <template>
   <main class="auth-page">
-    <section class="auth-panel">
-      <!-- 左侧品牌区负责建立产品语境，右侧表单负责实际认证流程。 -->
-      <div class="auth-brand">
-        <div class="brand-mark">云</div>
-        <div>
-          <h1>个人云盘</h1>
-          <p>管理你的文件、下载链接与云端资料</p>
-        </div>
-      </div>
+    <!-- 品牌卡片 -->
+    <div class="auth-brand-card">
+      <svg
+        ref="cloudRef"
+        class="cloud-avatar"
+        viewBox="0 0 200 160"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <!-- 云朵轮廓：三段圆弧 + 底边水平直线 -->
+        <path
+          d="M30 120 C30 120, 10 120, 10 95 C10 70, 35 60, 50 65 C50 30, 85 10, 110 35 C125 15, 165 20, 170 55 C195 55, 195 85, 175 100 C190 110, 185 120, 170 120 Z"
+          stroke="#000"
+          stroke-width="3"
+          fill="#fff"
+        />
 
-      <!-- Element Plus 表单通过 ref 暴露 validate/clearValidate 等方法。 -->
+        <!-- 左眼 -->
+        <template v-if="mode === 'login' && !passwordFocused">
+          <circle cx="80" cy="80" r="12" fill="#fff" stroke="#000" stroke-width="2.5" />
+          <circle :cx="80 + eyeOffset.lx" :cy="80 + eyeOffset.ly" r="5" fill="#000" />
+        </template>
+        <template v-else-if="mode === 'login' && passwordFocused">
+          <!-- 闭眼：向下凸的圆弧 -->
+          <path d="M68 82 Q80 94 92 82" stroke="#000" stroke-width="3" fill="none" stroke-linecap="round" />
+        </template>
+        <template v-else>
+          <!-- 兴奋眼：左> 右< -->
+          <polyline points="68,70 92,80 68,90" stroke="#000" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+        </template>
+
+        <!-- 右眼 -->
+        <template v-if="mode === 'login' && !passwordFocused">
+          <circle cx="130" cy="80" r="12" fill="#fff" stroke="#000" stroke-width="2.5" />
+          <circle :cx="130 + eyeOffset.rx" :cy="80 + eyeOffset.ry" r="5" fill="#000" />
+        </template>
+        <template v-else-if="mode === 'login' && passwordFocused">
+          <!-- 闭眼：向下凸的圆弧 -->
+          <path d="M118 82 Q130 94 142 82" stroke="#000" stroke-width="3" fill="none" stroke-linecap="round" />
+        </template>
+        <template v-else>
+          <!-- 兴奋眼：左> 右< -->
+          <polyline points="142,70 118,80 142,90" stroke="#000" stroke-width="3.5" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+        </template>
+      </svg>
+
+      <h1>个人云盘</h1>
+      <p>管理你的文件、下载链接与云端资料</p>
+    </div>
+
+    <!-- 表单卡片 -->
+    <section class="auth-form-card">
       <el-form
         ref="formRef"
         class="auth-form"
@@ -115,10 +177,11 @@ async function submit() {
             type="password"
             show-password
             :prefix-icon="Lock"
+            @focus="passwordFocused = true"
+            @blur="passwordFocused = false"
           />
         </el-form-item>
 
-        <!-- 只有注册模式需要昵称；登录接口不需要这个字段。 -->
         <el-form-item v-if="mode === 'register'" label="昵称" prop="nickname">
           <el-input v-model.trim="form.nickname" placeholder="可选，默认使用用户名" size="large" />
         </el-form-item>

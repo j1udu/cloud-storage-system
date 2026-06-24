@@ -15,12 +15,13 @@ import (
 type ShareService struct {
 	shareRepo         *repository.ShareRepo
 	fileRepo          *repository.FileRepo
+	userRepo          *repository.UserRepo
 	storage           *storage.ObjectStorage
 	defaultQuotaBytes int64
 }
 
-func NewShareService(shareRepo *repository.ShareRepo, fileRepo *repository.FileRepo, storage *storage.ObjectStorage, defaultQuotaBytes int64) *ShareService {
-	return &ShareService{shareRepo: shareRepo, fileRepo: fileRepo, storage: storage, defaultQuotaBytes: defaultQuotaBytes}
+func NewShareService(shareRepo *repository.ShareRepo, fileRepo *repository.FileRepo, userRepo *repository.UserRepo, storage *storage.ObjectStorage, defaultQuotaBytes int64) *ShareService {
+	return &ShareService{shareRepo: shareRepo, fileRepo: fileRepo, userRepo: userRepo, storage: storage, defaultQuotaBytes: defaultQuotaBytes}
 }
 
 func (s *ShareService) Create(userID uint64, req *model.ShareCreateRequest) (*model.Share, error) {
@@ -85,13 +86,29 @@ func (s *ShareService) List(userID uint64, page, pageSize int) (*model.ShareList
 	if err != nil {
 		return nil, err
 	}
-	if items == nil {
-		items = []model.Share{}
+
+	shareItems := make([]model.ShareItem, 0, len(items))
+	for _, sh := range items {
+		si := model.ShareItem{
+			ID:         sh.ID,
+			UserID:     sh.UserID,
+			MatterID:   sh.MatterID,
+			Token:      sh.Token,
+			AccessCode: sh.AccessCode,
+			ExpireAt:   sh.ExpireAt,
+			Status:     sh.Status,
+			CreatedAt:  sh.CreatedAt,
+			UpdatedAt:  sh.UpdatedAt,
+		}
+		if m, err := s.fileRepo.GetByID(sh.MatterID); err == nil {
+			si.MatterName = m.Name
+		}
+		shareItems = append(shareItems, si)
 	}
 
 	return &model.ShareListResponse{
 		Total: total,
-		Items: items,
+		Items: shareItems,
 	}, nil
 }
 
@@ -109,7 +126,19 @@ func (s *ShareService) GetPublicInfo(token string) (*model.PublicShareInfoRespon
 		return nil, fmt.Errorf("matter is not active")
 	}
 
-	return &model.PublicShareInfoResponse{Matter: *matter}, nil
+	sharerName := ""
+	if user, err := s.userRepo.GetByID(share.UserID); err == nil {
+		sharerName = user.Nickname
+		if sharerName == "" {
+			sharerName = user.Username
+		}
+	}
+
+	return &model.PublicShareInfoResponse{
+		Matter:     *matter,
+		SharerName: sharerName,
+		HasCode:    share.AccessCode != "",
+	}, nil
 }
 
 func (s *ShareService) Download(ctx context.Context, token string, req *model.ShareDownloadRequest) (string, error) {
