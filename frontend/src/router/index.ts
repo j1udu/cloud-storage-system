@@ -23,6 +23,12 @@ const router = createRouter({
       meta: { requiresAuth: true },
     },
     {
+      path: '/share/:token',
+      name: 'share',
+      component: () => import('@/views/ShareView.vue'),
+      meta: { public: true },
+    },
+    {
       path: '/:pathMatch(.*)*',
       redirect: '/files',
     },
@@ -33,6 +39,9 @@ const router = createRouter({
 router.beforeEach((to) => {
   const authStore = useAuthStore();
   authStore.clearExpiredAuth();
+
+  // 公开页面不需要任何检查
+  if (to.meta.public) return true;
 
   // 需要登录的页面没有有效 token 时，跳回登录页并记录原始目标地址。
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {

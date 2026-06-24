@@ -63,7 +63,7 @@ func main() {
 	quotaHandler := handler.NewQuotaHandler(quotaService)
 
 	shareRepo := repository.NewShareRepo(db)
-	shareService := service.NewShareService(shareRepo, fileRepo, objStorage, cfg.Quota.DefaultBytes)
+	shareService := service.NewShareService(shareRepo, fileRepo, userRepo, objStorage, cfg.Quota.DefaultBytes)
 	shareHandler := handler.NewShareHandler(shareService)
 
 	// 5. 创建 Gin 引擎，注册路由

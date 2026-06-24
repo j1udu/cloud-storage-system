@@ -1,5 +1,5 @@
 import { request } from './request';
-import type { DownloadResponse, FileListResponse, FileUploadResponse, Matter, PathItem } from '@/types/api';
+import type { DownloadResponse, FileListResponse, FileUploadResponse, Matter, PathItem, PublicShareInfo, Share, ShareCreateRequest, ShareListResponse, StorageQuota } from '@/types/api';
 
 export interface ListFilesParams {
   folder_id: number;
@@ -61,4 +61,59 @@ export function createFolder(parentId: number, name: string) {
 // 获取面包屑路径
 export function getFolderPath(folderId: number) {
   return request<PathItem[]>(`/folders/path?folder_id=${folderId}`);
+}
+
+// 移动文件/文件夹到目标文件夹，target_id 为 0 表示移到根目录。
+export function moveFile(id: number, targetId: number) {
+  return request<null>(`/files/${id}/move`, {
+    method: 'PUT',
+    body: JSON.stringify({ target_id: targetId }),
+  });
+}
+
+// ========== 容量 ==========
+export function getStorageQuota() {
+  return request<StorageQuota>('/storage/quota');
+}
+
+// ========== 回收站 ==========
+export function listRecycle(page: number, pageSize: number) {
+  const search = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  return request<FileListResponse>(`/recycle?${search.toString()}`);
+}
+
+export function restoreRecycleItem(id: number) {
+  return request<null>(`/recycle/${id}/restore`, { method: 'PUT' });
+}
+
+export function permanentDeleteRecycleItem(id: number) {
+  return request<null>(`/recycle/${id}`, { method: 'DELETE' });
+}
+
+// ========== 分享 ==========
+export function createShare(data: ShareCreateRequest) {
+  return request<Share>('/shares', {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export function listShares(page: number, pageSize: number) {
+  const search = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+  return request<ShareListResponse>(`/shares?${search.toString()}`);
+}
+
+export function cancelShare(id: number) {
+  return request<null>(`/shares/${id}`, { method: 'DELETE' });
+}
+
+export function getPublicShareInfo(token: string) {
+  return request<PublicShareInfo>(`/public/shares/${token}`);
+}
+
+export function downloadPublicShare(token: string, accessCode = '') {
+  return request<{ url: string }>(`/public/shares/${token}/download`, {
+    method: 'POST',
+    body: JSON.stringify({ access_code: accessCode }),
+  });
 }
