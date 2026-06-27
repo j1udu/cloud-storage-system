@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -60,13 +62,19 @@ func (h *FileHandler) Download(c *gin.Context) {
 		return
 	}
 
-	url, err := h.fileService.Download(c.Request.Context(), userID.(uint64), fileID)
+	reader, filename, size, contentType, err := h.fileService.DownloadContent(c.Request.Context(), userID.(uint64), fileID)
 	if err != nil {
 		Fail(c, errcode.ErrParamInvalid, err.Error())
 		return
 	}
+	defer reader.Close()
 
-	Success(c, gin.H{"url": url})
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	c.DataFromReader(http.StatusOK, size, contentType, reader, nil)
 }
 
 // List lists active files and folders.

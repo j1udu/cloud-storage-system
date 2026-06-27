@@ -8,7 +8,6 @@ import (
 	"io"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/j1udu/cloud-storage-system/backend/internal/model"
 	"github.com/j1udu/cloud-storage-system/backend/internal/pkg/hash"
@@ -81,27 +80,28 @@ func (s *FileService) Upload(ctx context.Context, userID uint64, parentID uint64
 	}, nil
 }
 
-// Download 获取文件下载链接
-func (s *FileService) Download(ctx context.Context, userID, fileID uint64) (string, error) {
+// DownloadContent 获取文件内容流，返回值：reader, filename, size, mimeType, error
+func (s *FileService) DownloadContent(ctx context.Context, userID, fileID uint64) (io.ReadCloser, string, int64, string, error) {
 	matter, err := s.repo.GetByID(fileID)
 	if err != nil {
-		return "", fmt.Errorf("文件不存在")
+		return nil, "", 0, "", fmt.Errorf("文件不存在")
 	}
 	if matter.UserID != userID {
-		return "", fmt.Errorf("无权访问此文件")
+		return nil, "", 0, "", fmt.Errorf("无权访问此文件")
 	}
 	if matter.Status != 1 {
-		return "", fmt.Errorf("文件已被删除")
+		return nil, "", 0, "", fmt.Errorf("文件已被删除")
 	}
 	if matter.Dir {
-		return "", fmt.Errorf("文件夹不能下载")
+		return nil, "", 0, "", fmt.Errorf("文件夹不能下载")
 	}
 
-	url, err := s.storage.GetPresignedURL(ctx, matter.StorageKey, matter.Name, time.Hour)
+	reader, err := s.storage.GetObject(ctx, matter.StorageKey)
 	if err != nil {
-		return "", err
+		return nil, "", 0, "", fmt.Errorf("get file from storage failed: %w", err)
 	}
-	return url, nil
+
+	return reader, matter.Name, matter.Size, matter.MimeType, nil
 }
 
 // List 列出文件夹内容

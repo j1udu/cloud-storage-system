@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/j1udu/cloud-storage-system/backend/internal/model"
@@ -141,27 +142,32 @@ func (s *ShareService) GetPublicInfo(token string) (*model.PublicShareInfoRespon
 	}, nil
 }
 
-func (s *ShareService) Download(ctx context.Context, token string, req *model.ShareDownloadRequest) (string, error) {
+func (s *ShareService) DownloadContent(ctx context.Context, token string, req *model.ShareDownloadRequest) (io.ReadCloser, string, int64, string, error) {
 	share, err := s.validShare(token)
 	if err != nil {
-		return "", err
+		return nil, "", 0, "", err
 	}
 	if share.AccessCode != "" && share.AccessCode != req.AccessCode {
-		return "", fmt.Errorf("access_code invalid")
+		return nil, "", 0, "", fmt.Errorf("access_code invalid")
 	}
 
 	matter, err := s.fileRepo.GetByID(share.MatterID)
 	if err != nil {
-		return "", fmt.Errorf("matter not found")
+		return nil, "", 0, "", fmt.Errorf("matter not found")
 	}
 	if matter.Status != 1 {
-		return "", fmt.Errorf("matter is not active")
+		return nil, "", 0, "", fmt.Errorf("matter is not active")
 	}
 	if matter.Dir {
-		return "", fmt.Errorf("folder cannot download")
+		return nil, "", 0, "", fmt.Errorf("folder cannot download")
 	}
 
-	return s.storage.GetPresignedURL(ctx, matter.StorageKey, matter.Name, time.Hour)
+	reader, err := s.storage.GetObject(ctx, matter.StorageKey)
+	if err != nil {
+		return nil, "", 0, "", fmt.Errorf("get file from storage failed: %w", err)
+	}
+
+	return reader, matter.Name, matter.Size, matter.MimeType, nil
 }
 
 func (s *ShareService) Save(userID uint64, token string, req *model.ShareSaveRequest) (*model.ShareSaveResponse, error) {
