@@ -65,11 +65,6 @@ export interface FileUploadResponse {
   ext: string;
 }
 
-// 下载接口返回对象存储的预签名 URL。
-export interface DownloadResponse {
-  url: string;
-}
-
 // 创建文件夹请求体
 export interface CreateFolderRequest {
   parent_id: number;

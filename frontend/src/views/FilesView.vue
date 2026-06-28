@@ -5,7 +5,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import {
-  cancelShare, createFolder, createShare, deleteFile, getDownloadUrl, getFolderPath,
+  cancelShare, createFolder, createShare, deleteFile, downloadFile, getFolderPath,
   getStorageQuota, listFiles, listRecycle, listShares, moveFile, permanentDeleteRecycleItem,
   renameFile, restoreRecycleItem, uploadFile,
 } from '@/api/files';
@@ -395,10 +395,15 @@ async function handleUpload(event: Event) {
 
 async function download(row: Matter) {
   try {
-    const data = await getDownloadUrl(row.id);
-    window.open(data.url, '_blank', 'noopener,noreferrer');
+    const blob = await downloadFile(row.id);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = row.name;
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   } catch (error) {
-    showApiError(error, '获取下载链接失败');
+    showApiError(error, '下载失败');
   }
 }
 
@@ -446,10 +451,13 @@ async function batchDownload() {
   const failedNames: string[] = [];
   for (const f of selected) {
     try {
-      const data = await getDownloadUrl(f.id);
+      const blob = await downloadFile(f.id);
+      const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = data.url; a.download = f.name; a.target = '_blank'; a.rel = 'noopener,noreferrer';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      a.href = url; a.download = f.name;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
       await new Promise(r => setTimeout(r, 300));
     } catch { failedNames.push(f.name); }
   }
@@ -608,15 +616,42 @@ async function submitCreateShare() {
   }
 }
 
+function copyToClipboard(text: string) {
+  // navigator.clipboard 在 HTTPS 或 localhost 下才可用，
+  // 非安全上下文回退到 textarea + execCommand 方案。
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text).then(
+      () => ElMessage.success('链接已复制'),
+      () => fallbackCopy(text)
+    );
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text: string) {
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  try {
+    document.execCommand('copy');
+    ElMessage.success('链接已复制');
+  } catch {
+    ElMessage.error('复制失败，请手动复制');
+  }
+  document.body.removeChild(textarea);
+}
+
 function copyShareLink() {
   if (!shareResult.value) return;
-  const link = `${origin}/share/${shareResult.value.token}`;
-  navigator.clipboard.writeText(link).then(() => ElMessage.success('链接已复制')).catch(() => ElMessage.error('复制失败'));
+  copyToClipboard(`${origin}/share/${shareResult.value.token}`);
 }
 
 function copyShareTokenLink(token: string) {
-  const link = `${origin}/share/${token}`;
-  navigator.clipboard.writeText(link).then(() => ElMessage.success('链接已复制')).catch(() => ElMessage.error('复制失败'));
+  copyToClipboard(`${origin}/share/${token}`);
 }
 
 async function openShareList() {

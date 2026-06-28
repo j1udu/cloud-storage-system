@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"fmt"
+	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -100,13 +102,19 @@ func (h *ShareHandler) PublicDownload(c *gin.Context) {
 		return
 	}
 
-	url, err := h.shareService.Download(c.Request.Context(), token, &req)
+	reader, filename, size, contentType, err := h.shareService.DownloadContent(c.Request.Context(), token, &req)
 	if err != nil {
 		Fail(c, errcode.ErrParamInvalid, err.Error())
 		return
 	}
+	defer reader.Close()
 
-	Success(c, gin.H{"url": url})
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	c.DataFromReader(http.StatusOK, size, contentType, reader, nil)
 }
 
 func (h *ShareHandler) Save(c *gin.Context) {

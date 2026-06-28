@@ -1,5 +1,6 @@
-import { request } from './request';
-import type { DownloadResponse, FileListResponse, FileUploadResponse, Matter, PathItem, PublicShareInfo, Share, ShareCreateRequest, ShareListResponse, StorageQuota } from '@/types/api';
+import { request, API_BASE_URL } from './request';
+import { getStoredToken } from '@/utils/authStorage';
+import type { FileListResponse, FileUploadResponse, Matter, PathItem, PublicShareInfo, Share, ShareCreateRequest, ShareListResponse, StorageQuota } from '@/types/api';
 
 export interface ListFilesParams {
   folder_id: number;
@@ -30,9 +31,20 @@ export function uploadFile(file: File, parentId: number) {
   });
 }
 
-// 后端返回的是对象存储的预签名 URL，前端拿到后再打开下载。
-export function getDownloadUrl(id: number) {
-  return request<DownloadResponse>(`/files/${id}/download`);
+// 下载文件，返回 blob 对象
+export async function downloadFile(id: number) {
+  const token = getStoredToken();
+  const resp = await fetch(`${API_BASE_URL}/files/${id}/download`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!resp.ok) throw new Error(`下载失败：${resp.status}`);
+  // 检查是否是 JSON 错误响应
+  const contentType = resp.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    const errData = await resp.json();
+    throw new Error(errData.msg || '下载失败');
+  }
+  return resp.blob();
 }
 
 // 删除操作目前对应后端软删除，成功后页面会刷新列表。
@@ -109,11 +121,4 @@ export function cancelShare(id: number) {
 
 export function getPublicShareInfo(token: string) {
   return request<PublicShareInfo>(`/public/shares/${token}`);
-}
-
-export function downloadPublicShare(token: string, accessCode = '') {
-  return request<{ url: string }>(`/public/shares/${token}/download`, {
-    method: 'POST',
-    body: JSON.stringify({ access_code: accessCode }),
-  });
 }

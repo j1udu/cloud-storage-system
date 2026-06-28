@@ -3,7 +3,7 @@ import { ElMessage } from 'element-plus';
 import type { ApiResponse } from '@/types/api';
 import { clearAuth, getStoredToken } from '@/utils/authStorage';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
 
 // 业务层统一捕获这个错误类型，便于展示后端返回的错误信息。
 export class ApiError extends Error {

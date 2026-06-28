@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus';
 import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 
-import { downloadPublicShare, getPublicShareInfo } from '@/api/files';
+import { getPublicShareInfo } from '@/api/files';
 import type { PublicShareInfo } from '@/types/api';
 import { formatBytes, formatDate } from '@/utils/format';
 
@@ -51,15 +51,36 @@ async function handleDownload() {
   downloading.value = true;
   codeError.value = '';
   try {
-    const data = await downloadPublicShare(token.value, accessCode.value);
-    const a = document.createElement('a');
-    a.href = data.url;
-    a.download = shareInfo.value.matter.name;
-    a.target = '_blank';
-    a.rel = 'noopener,noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    // 直接通过 API 流式下载文件，不再经过 MinIO 预签名 URL
+    const resp = await fetch(`/api/v1/public/shares/${token.value}/download`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ access_code: accessCode.value }),
+    });
+
+    // 检查响应类型：如果是 JSON 说明后端返回了错误
+    const contentType = resp.headers.get('content-type') || '';
+    if (!contentType.includes('application/json')) {
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = shareInfo.value.matter.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return;
+    }
+
+    // JSON 错误响应
+    const errData = await resp.json();
+    const msg = errData.msg || '下载失败';
+    if (msg.includes('access_code')) {
+      codeError.value = '提取码错误';
+    } else {
+      ElMessage.error(msg);
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : '下载失败';
     if (msg.includes('access_code')) {
